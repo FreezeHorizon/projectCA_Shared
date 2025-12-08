@@ -1,7 +1,5 @@
 class_name CardManager extends Node2D
 
-# Import GameConstants
-#const GameConstants = preload("res://CardManager/GameConstants.gd")
 signal card_drag_placement_attempted(dragged_card_node: BaseCard, target_slot_node: Node2D)
 
 # Core game state variables
@@ -10,24 +8,33 @@ var card_being_dragged: BaseCard
 var is_hovering_on_card:bool
 var player_hand_reference:Node2D
 var game_board_reference:Node2D
-var emperor_position: Array[Node2D] = [null,null]
+var emperor_position: Array[Node] = [null, null]
 
 # References to subsystems
-@onready var movement: Node = $CardMovementSystem
-@onready var board_state: Node = $BoardStateManager
-@onready var placement: Node = $PlacementValidator
-@onready var selection: Node = $CardSelectionManager
-@onready var mulligan_manager: Control = $"../MulliganManager"
-
+var movement: Node
+var board_state: Node
+var placement: Node
+var selection: Node
+var mulligan_manager: Control
+var input_manager 
 # Initialize components
 func _ready() -> void:
-	screen_size = get_viewport_rect().size
-	player_hand_reference = $"../PlayerHand"
-	game_board_reference = $"../GameBoard"
-
-	# Connect input signals
-	$"../InputManager".connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
-	$"../InputManager".connect("left_mouse_button_clicked", Callable(self, "left_mouse_button_clicked"))
+	
+	movement = get_node_or_null("CardMovementSystem")
+	board_state = get_node_or_null("BoardStateManager")
+	placement = get_node_or_null("PlacementValidator")
+	
+	# Client Side
+	if not OS.has_feature("server"):
+		selection = get_node_or_null("CardSelectionManager")
+		mulligan_manager = get_node_or_null("MulliganManager")
+		screen_size = get_viewport_rect().size
+		player_hand_reference = get_node_or_null("PlayerHand")
+		game_board_reference = get_node_or_null("GameBoard")
+		input_manager = get_node_or_null("InputManager")
+		# Connect input signals
+		input_manager.connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
+		input_manager.connect("left_mouse_button_clicked", Callable(self, "left_mouse_button_clicked"))
 
 	# Initialize subsystems and pass references
 	initialize_subsystems()
@@ -48,11 +55,12 @@ func initialize_subsystems() -> void:
 
 
 func _process(_delta: float) -> void:
-	if card_being_dragged:
-		var mouse_pos:Vector2 = get_global_mouse_position()
-		# Ensure card stays within screen boundaries
-		card_being_dragged.position = Vector2(clamp(mouse_pos.x,0,screen_size.x),
-			clamp(mouse_pos.y,0,screen_size.y))
+	if not OS.has_feature("server"):
+		if card_being_dragged:
+			var mouse_pos:Vector2 = get_global_mouse_position()
+			# Ensure card stays within screen boundaries
+			card_being_dragged.position = Vector2(clamp(mouse_pos.x,0,screen_size.x),
+				clamp(mouse_pos.y,0,screen_size.y))
 
 # Handle mouse release events - primarily for finishing card drags
 func on_left_click_released():
@@ -80,9 +88,9 @@ func on_left_click_released():
 
 # Remove all visual overlays from board slots
 func reset_all_slot_overlays() -> void:
-	#print("!!!!!!!!!! CARD_MANAGER: RESET_ALL_SLOT_OVERLAYS CALLED !!!!!!!!!!") # Make it stand out
-	for slot in get_tree().get_nodes_in_group("CardSlots"):
-		slot.reset_overlays()
+	if not OS.has_feature("server"):
+		for slot in get_tree().get_nodes_in_group("CardSlots"):
+			slot.reset_overlays()
 
 # Begin dragging a card if it's in a state that allows dragging
 func start_drag(card: Node2D) -> void:

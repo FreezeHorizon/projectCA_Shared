@@ -62,19 +62,15 @@ func display_valid_placements(card: Node2D) -> void:
 
 # Calculate Manhattan distance between two slots (used for placement and attack range)
 func calculate_manhattan_distance(slot1: Node2D, slot2: Node2D) -> int:
-	var slot1_pos: Vector2 = get_slot_grid_position(slot1)
-	var slot2_pos: Vector2 = get_slot_grid_position(slot2)
-	
-	return abs(slot1_pos.x - slot2_pos.x) + abs(slot1_pos.y - slot2_pos.y)
+	var pos1 = slot1.data.grid_position
+	var pos2 = slot2.data.grid_position
+
+	# Manhattan Distance formula for grid: |x1 - x2| + |y1 - y2|
+	return abs(pos1.x - pos2.x) + abs(pos1.y - pos2.y)
 
 # Convert a slot's name (like "A1", "B2") to grid coordinates (0,0), (1,1), etc.
-func get_slot_grid_position(slot: Node2D) -> Vector2:
-	var name_str = String(slot.name)
-	# Convert letter (A-D) to row index (0-3)
-	var row = name_str.unicode_at(0) - "A".unicode_at(0)
-	# Convert number (1-4) to column index (0-3)
-	var col = int(name_str[1]) - 1
-	return Vector2(col, row)
+func get_slot_grid_position(slot: Node2D) -> Vector2i:
+	return slot.data.grid_position
 
 # Check if two cards belong to the same faction (are allies)
 func is_ally_card(card1: Node2D, card2: Node2D) -> bool:

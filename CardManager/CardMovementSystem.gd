@@ -1,8 +1,8 @@
 extends Node
 
 # Core references
-var card_manager: Node2D
-@onready var game_board_reference: Node2D = $"../../GameBoard"
+var card_manager: Node
+@onready var game_board_reference: Node = $"../../GameBoard"
 var emperor_position: Node2D = null
 @onready var player_hand_reference: Array[Node2D] = [%PlayerHand,%EnemyHand]
 @onready var battle_manager: Node = %BattleManager
