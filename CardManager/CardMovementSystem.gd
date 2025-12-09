@@ -4,9 +4,20 @@ extends Node
 var card_manager: Node
 @onready var game_board_reference: Node = $"../../GameBoard"
 var emperor_position: Node2D = null
-@onready var player_hand_reference: Array[Node2D] = [%PlayerHand,%EnemyHand]
-@onready var battle_manager: Node = %BattleManager
+var player_hand_reference: Array = [null, null]
+var battle_manager: Node
 # Initialize with references to key systems
+
+func _ready() -> void:
+	# Only try to find these if we are NOT on the server
+	
+	if not OS.has_feature("server"):
+		battle_manager = %BattleManager
+		var p1_hand = get_node_or_null("%PlayerHand") # Or correct relative path
+		var p2_hand = get_node_or_null("%EnemyHand")
+		player_hand_reference = [p1_hand, p2_hand]
+	else:
+		battle_manager = $"../../BattleManager"
 func initialize(manager: Node2D, board: Node2D) -> void:
 	card_manager = manager
 	game_board_reference = board

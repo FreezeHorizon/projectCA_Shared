@@ -8,7 +8,7 @@ signal health_changed(new_health: int, old_health: int, card_instance: BaseCard)
 signal died(card_instance: BaseCard) # This signal means "I have completed my death process and am being removed"
 
 
-@onready var animation_player: AnimationPlayer = $AnimationPlayer
+var animation_player: AnimationPlayer
 
 # --- Properties (Initialized by initialize_card_from_database) ---
 var card_name: String = "Unknown"    # User-facing name, or the db_key
@@ -81,6 +81,7 @@ var _is_face_down: bool = false
 # LIFECYCLE METHODS
 #-----------------------------------------------------------------------------
 func _ready() -> void:
+	animation_player = get_node_or_null("AnimationPlayer")
 	add_to_group("AllCards") 
 	if not has_meta("original_y"):
 		set_meta("original_y", position.y)

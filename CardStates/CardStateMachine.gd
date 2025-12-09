@@ -84,6 +84,7 @@ var state_config = {
 	},
 }
 
+
 func _ready():
 	# Ensure we have a reference to the card
 	card = get_parent()
@@ -99,11 +100,18 @@ func _ready():
 		# else:
 			# print("CardStateMachine on '", card.name, "': Could not reliably find CardManager.")
 
+func _is_server() -> bool:
+	return OS.has_feature("server")
+
 # Transition between states with validation and side effects
 func transition_to(new_state: State, context: Dictionary = {}) -> bool:
 	var old_state = current_state
 	if new_state == old_state: 
 		return true 
+	
+	# Fix 2: Store the incoming context so state functions like _start_moving can read it
+	self.event_context = context
+
 	if _is_valid_transition(current_state, new_state):
 		_exit_state(current_state)
 		_enter_state(new_state)
@@ -111,6 +119,7 @@ func transition_to(new_state: State, context: Dictionary = {}) -> bool:
 		emit_signal("state_changed", old_state, current_state)
 		return true
 	else:
+		# Fix 3: Clear the context if the transition failed
 		self.event_context = {}
 		print("CardStateMachine: INVALID transition attempted on '", card.name, "' from ", State.keys()[old_state], " to ", State.keys()[new_state])
 		return false
@@ -124,7 +133,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			return to_state == State.IN_HAND  # Only allow transition to IN_HAND when mulligan is over
 		State.IN_HAND:
 			# When in hand, don't allow hovering if in mulligan phase or if a card is being dragged
-			if card_manager_reference and card_manager_reference.get_parent().get_node("MulliganManager").mull_phase:
+			if card_manager_reference and card_manager_reference.get_parent().get_node_or_null("MulliganManager").mull_phase:
 				return to_state == State.MULLIGAN
 			# Check if any card is being dragged
 			if to_state == State.HOVERING and card_manager_reference and card_manager_reference.card_being_dragged:
@@ -135,7 +144,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 					to_state == State.MULLIGAN
 		State.HOVERING:
 			# Check for mulligan phase when trying to exit hover state
-			if card_manager_reference and card_manager_reference.get_parent().get_node("MulliganManager").mull_phase:
+			if card_manager_reference and card_manager_reference.get_parent().get_node_or_null("MulliganManager").mull_phase:
 				return to_state == State.IN_HAND  # Only allow returning to hand during mulligan
 			return to_state == State.IN_HAND or to_state == State.DRAGGING
 		State.DRAGGING:
@@ -235,93 +244,118 @@ func _enter_state(state: State) -> void:
 
 # State-specific action methods
 func _start_drag() -> void:
+	if _is_server(): return
 	card.scale = state_config[State.DRAGGING]["scale"]
 	card.z_index = state_config[State.DRAGGING]["z_index"]
 	card.get_node("Highlight").visible = true
 
 func _finish_drag() -> void:
+	if _is_server(): return
 	# Reset any drag-specific configurations
 	card.get_node("Highlight").visible = false
 	pass
 
 func _place_on_board() -> void:
-	# Disable collision for hand-related interactions
-	if card.get_node_or_null("Area2D/CollisionShape2D"):
-		card.get_node("Area2D/CollisionShape2D").set_deferred("disabled", true)
-	card.get_node("ApCostImage").visible = false
-	card.get_node("TypeImage").visible = false
-	card.scale = state_config[State.ON_BOARD_ENTER]["scale"]
-	card.z_index = state_config[State.ON_BOARD_ENTER]["z_index"]
-	# Enable collision after animation
-	call_deferred("_enable_board_collision")
+	if not _is_server():
+		# Disable collision for hand-related interactions
+		if card.get_node_or_null("Area2D/CollisionShape2D"):
+			card.get_node("Area2D/CollisionShape2D").set_deferred("disabled", true)
+		
+		# Hide UI elements
+		var ap_cost = card.get_node_or_null("ApCostImage")
+		if ap_cost: ap_cost.visible = false
+		var type_img = card.get_node_or_null("TypeImage")
+		if type_img: type_img.visible = false
+		
+		# Set scale/z_index
+		card.scale = state_config[State.ON_BOARD_ENTER]["scale"]
+		card.z_index = state_config[State.ON_BOARD_ENTER]["z_index"]
+		
+		# Enable collision after animation
+		call_deferred("_enable_board_collision")
 	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
 	card.use_action(card.ActionType.ENTER,trigger_source)
 
 func _enable_board_collision() -> void:
+	if not _is_server():
 	# Re-enable collision for board interactions
-	if card.get_node_or_null("Area2D/CollisionShape2D"):
-		card.get_node("Area2D/CollisionShape2D").disabled = false
+		if card.get_node_or_null("Area2D/CollisionShape2D"):
+			card.get_node("Area2D/CollisionShape2D").disabled = false
 
 func _idle_on_board() -> void:
-	card.scale = state_config[State.ON_BOARD_IDLE]["scale"]
-	card.z_index = state_config[State.ON_BOARD_IDLE]["z_index"]
+	if not _is_server():
+		card.scale = state_config[State.ON_BOARD_IDLE]["scale"]
+		card.z_index = state_config[State.ON_BOARD_IDLE]["z_index"]
 
 func _start_hover() -> void:
-	card.scale = state_config[State.HOVERING]["scale"]
-	card.z_index = state_config[State.HOVERING]["z_index"]
-	card.get_node("Highlight").visible = true
+	if not _is_server():
+		card.scale = state_config[State.HOVERING]["scale"]
+		card.z_index = state_config[State.HOVERING]["z_index"]
+		card.get_node("Highlight").visible = true
 
 func _reset_hover_state() -> void:
-	card.scale = state_config[State.IN_HAND]["scale"]
-	card.z_index = state_config[State.IN_HAND]["z_index"]
-	card.get_node("Highlight").visible = false
+	if not _is_server():
+		card.scale = state_config[State.IN_HAND]["scale"]
+		card.z_index = state_config[State.IN_HAND]["z_index"]
+		card.get_node("Highlight").visible = false
 
 func _select_on_board() -> void:
-	card.get_node("CardImage").position -= state_config[State.SELECTED]["y_offset"]
-	card.get_node("CardBackImage").position -= state_config[State.SELECTED]["y_offset"]
-	card.get_node("CardOutline").scale -= Vector2(0.05,0.05)
-	card.get_node("CardOutline").position += Vector2(0,6)
-	card.get_node("Selected").play("Selected")
-	card.scale = state_config[State.SELECTED]["scale"]
-	card.z_index = state_config[State.SELECTED]["z_index"]
+	if not _is_server():
+		card.get_node("CardImage").position -= state_config[State.SELECTED]["y_offset"]
+		card.get_node("CardBackImage").position -= state_config[State.SELECTED]["y_offset"]
+		card.get_node("CardOutline").scale -= Vector2(0.05,0.05)
+		card.get_node("CardOutline").position += Vector2(0,6)
+		card.get_node("Selected").play("Selected")
+		card.scale = state_config[State.SELECTED]["scale"]
+		card.z_index = state_config[State.SELECTED]["z_index"]
 
 func _deselect_on_board() -> void:
-	card.get_node("Selected").stop()
-	card.get_node("CardBackImage").position += state_config[State.SELECTED]["y_offset"]
-	card.get_node("CardImage").position += state_config[State.SELECTED]["y_offset"]
-	card.get_node("CardOutline").scale += Vector2(0.05,0.05)
-	card.get_node("CardOutline").position -= Vector2(0,6)  
-	card.scale = state_config[State.ON_BOARD_IDLE]["scale"]
-	card.z_index = state_config[State.ON_BOARD_IDLE]["z_index"]
+	if not _is_server():
+		card.get_node("Selected").stop()
+		card.get_node("CardBackImage").position += state_config[State.SELECTED]["y_offset"]
+		card.get_node("CardImage").position += state_config[State.SELECTED]["y_offset"]
+		card.get_node("CardOutline").scale += Vector2(0.05,0.05)
+		card.get_node("CardOutline").position -= Vector2(0,6)  
+		card.scale = state_config[State.ON_BOARD_IDLE]["scale"]
+		card.z_index = state_config[State.ON_BOARD_IDLE]["z_index"]
 
 func _start_moving() -> void:
-	card.scale = state_config[State.MOVING]["scale"]
-	card.z_index = state_config[State.MOVING]["z_index"]
+	if not _is_server():
+		card.scale = state_config[State.MOVING]["scale"]
+		card.z_index = state_config[State.MOVING]["z_index"]
 	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
 	card.use_action(card.ActionType.MOVE, trigger_source)
 
 func _start_attacking() -> void:
-	card.scale = state_config[State.ATTACKING]["scale"]
-	card.z_index = state_config[State.ATTACKING]["z_index"]
+	# Visuals
+	if not _is_server():
+		card.scale = state_config[State.ATTACKING]["scale"]
+		card.z_index = state_config[State.ATTACKING]["z_index"]
+		var selected = card.get_node_or_null("Selected")
+		if selected: selected.stop() # Use get_node_or_null to be safe
+	
+	# Logic
 	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
 	card.use_action(card.ActionType.ATTACK, trigger_source)
-	card.get_node("Selected").stop()
 
 func _take_damage() -> void:
-	card.scale = state_config[State.DAMAGED]["scale"]
-	card.z_index = state_config[State.DAMAGED]["z_index"]
-	# Damage animation would be handled here
-	card._update_health_visual()
+	if not _is_server():
+		card.scale = state_config[State.DAMAGED]["scale"]
+		card.z_index = state_config[State.DAMAGED]["z_index"]
+		# Damage animation would be handled here
+		card._update_health_visual()
 	
 func _start_retaliate() -> void:
-	card.scale = state_config[State.RETALIATE]["scale"]
-	card.z_index = state_config[State.RETALIATE]["z_index"]
-	# Retaliation animation would be handled here
-	card._update_health_visual()
+	if not _is_server():
+		card.scale = state_config[State.RETALIATE]["scale"]
+		card.z_index = state_config[State.RETALIATE]["z_index"]
+		# Retaliation animation would be handled here
+		card._update_health_visual()
 func _start_death() -> void:
-	card.scale = state_config[State.DEATH]["scale"]
-	card.z_index = state_config[State.DEATH]["z_index"]
-	# Death animation would be handled here
+	if not _is_server():
+		card.scale = state_config[State.DEATH]["scale"]
+		card.z_index = state_config[State.DEATH]["z_index"]
+		# Death animation would be handled here
 
 # Public methods for external state management
 func can_drag() -> bool:
