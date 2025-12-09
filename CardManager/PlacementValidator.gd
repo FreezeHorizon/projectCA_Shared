@@ -3,8 +3,11 @@ extends Node
 
 var card_manager: Node2D
 var game_board_reference: Node2D
-@onready var battlemanager = %BattleManager
+var battle_manager: Node
 # Initialize with references to key systems
+func _ready() -> void:
+	battle_manager = $"../../BattleManager"
+	
 func initialize(manager: Node2D, board: Node2D) -> void:
 	card_manager = manager
 	game_board_reference = board

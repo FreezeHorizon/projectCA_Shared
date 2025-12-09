@@ -12,7 +12,6 @@ func _ready() -> void:
 	# Only try to find these if we are NOT on the server
 	
 	if not OS.has_feature("server"):
-		battle_manager = %BattleManager
 		var p1_hand = get_node_or_null("%PlayerHand") # Or correct relative path
 		var p2_hand = get_node_or_null("%EnemyHand")
 		player_hand_reference = [p1_hand, p2_hand]
