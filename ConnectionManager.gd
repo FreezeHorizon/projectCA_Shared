@@ -1,4 +1,4 @@
-# File: NetworkManager.gd (Autoload Singleton)
+# File: ConnectionManager.gd (Autoload Singleton)
 extends Node
 
 # --- Signals ---
@@ -12,6 +12,9 @@ signal player_readiness_updated(peer_id: int, is_ready: bool)
 signal all_players_ready_status_changed(all_ready: bool) # Emitted by server when all/not all are ready
 signal game_starting_countdown(time_left: int)
 signal start_game_now # Server tells clients to switch to game scene
+signal load_game_scene 
+signal all_clients_loaded_game_scene
+var players_loaded_count: int = 0
 
 # --- Properties ---
 var player_name: String = "Player" # Default name
@@ -45,19 +48,19 @@ func _ready():
 	multiplayer.connection_failed.connect(_on_mp_api_connection_failed)
 	
 	if multiplayer.multiplayer_peer != null:
-		print("NetworkManager: Clearing existing tree multiplayer_peer in _ready().")
+		print("ConnectionManager: Clearing existing tree multiplayer_peer in _ready().")
 		multiplayer.multiplayer_peer.close()
 		multiplayer.multiplayer_peer = null
-	print("NetworkManager initialized.")
+	print("ConnectionManager initialized.")
 
 # --- Player Info ---
 func set_player_name(p_name: String):
 	if not p_name.strip_edges().is_empty():
 		player_name = p_name.strip_edges()
-		print("NetworkManager: Player name set to: ", player_name)
+		print("ConnectionManager: Player name set to: ", player_name)
 	else:
 		player_name = "Player" + str(randi_range(100,999))
-		print("NetworkManager: Empty name given, set to default: ", player_name)
+		print("ConnectionManager: Empty name given, set to default: ", player_name)
 
 
 func get_player_name() -> String:
@@ -65,7 +68,7 @@ func get_player_name() -> String:
 
 # --- Hosting ---
 func host_game(port: int = DEFAULT_PORT) -> bool:
-	print("NetworkManager: Attempting to host game on port ", port)
+	print("ConnectionManager: Attempting to host game on port ", port)
 	current_port = port
 	
 	# Ensure any previous peer is closed and cleared
@@ -78,7 +81,7 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 	var peer = ENetMultiplayerPeer.new()
 	var error = peer.create_server(current_port, max_players)
 	if error != OK:
-		printerr("NetworkManager: Failed to create server! Error code: ", error)
+		printerr("ConnectionManager: Failed to create server! Error code: ", error)
 		connection_status = ConnectionStatus.CONNECTION_FAILED
 		emit_signal("connection_failed", "Server creation failed.")
 		return false
@@ -89,7 +92,7 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 	# The 'multiplayer' variable in this script will now also reflect this peer.
 	
 	connection_status = ConnectionStatus.HOSTING_SERVER
-	print("NetworkManager: Server started. Local Peer ID: ", multiplayer.get_unique_id()) # Should be 1
+	print("ConnectionManager: Server started. Local Peer ID: ", multiplayer.get_unique_id()) # Should be 1
 	
 	var host_id = multiplayer.get_unique_id() 
 	players[host_id] = {"name": player_name, "is_ready": false}
@@ -100,7 +103,7 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 
 # --- Joining ---
 func join_game(ip_address: String, port: int = DEFAULT_PORT) -> bool:
-	print("NetworkManager: Attempting to join game at ", ip_address, ":", port)
+	print("ConnectionManager: Attempting to join game at ", ip_address, ":", port)
 
 	if is_instance_valid(multiplayer.multiplayer_peer):
 		multiplayer.multiplayer_peer.close()
@@ -112,7 +115,7 @@ func join_game(ip_address: String, port: int = DEFAULT_PORT) -> bool:
 	var peer = ENetMultiplayerPeer.new()
 	var error = peer.create_client(ip_address, port)
 	if error != OK:
-		printerr("NetworkManager: Failed to create client! Error code: ", error)
+		printerr("ConnectionManager: Failed to create client! Error code: ", error)
 		connection_status = ConnectionStatus.CONNECTION_FAILED
 		emit_signal("connection_failed", "Client creation failed.")
 		return false
@@ -125,7 +128,7 @@ func join_game(ip_address: String, port: int = DEFAULT_PORT) -> bool:
 
 # --- Disconnecting ---
 func disconnect_from_game():
-	print("NetworkManager: Disconnecting...")
+	print("ConnectionManager: Disconnecting...")
 	if is_instance_valid(multiplayer.multiplayer_peer): 
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = null
@@ -139,7 +142,7 @@ func disconnect_from_game():
 
 # --- MultiplayerAPI Signal Handlers ---
 func _on_mp_api_peer_connected(id: int):
-	print("NetworkManager: Peer connected: ", id)
+	print("ConnectionManager: Peer connected: ", id)
 	if multiplayer.is_server():
 		players[id] = {"name": "Player_" + str(id), "is_ready": false} # Add with placeholder
 		emit_signal("peer_connected_to_server", id, players[id].name)
@@ -155,31 +158,31 @@ func _on_mp_api_peer_connected(id: int):
 
 
 func _on_mp_api_peer_disconnected(id: int):
-	print("NetworkManager: Peer disconnected: ", id)
+	print("ConnectionManager: Peer disconnected: ", id)
 	if multiplayer.is_server():
 		if players.has(id):
 			var disconnected_player_name = players[id].name
 			players.erase(id)
 			emit_signal("peer_disconnected_from_server", id)
 			rpc("client_receive_initial_lobby_state", players) # Update all with new list
-			print("NetworkManager: Player '", disconnected_player_name, "' (ID:", id, ") disconnected.")
+			print("ConnectionManager: Player '", disconnected_player_name, "' (ID:", id, ") disconnected.")
 			_check_and_emit_all_players_ready()
 
 
 func _on_mp_api_server_disconnected():
-	print("NetworkManager: Disconnected from server (I was a client).")
+	print("ConnectionManager: Disconnected from server (I was a client).")
 	disconnect_from_game() # Clean up
 	# UI should react to server_closed or a more specific client_disconnected_from_server signal
 
 func _on_mp_api_connected_to_server():
-	print("NetworkManager: Successfully connected to server! My ID: ", multiplayer.get_unique_id())
+	print("ConnectionManager: Successfully connected to server! My ID: ", multiplayer.get_unique_id())
 	connection_status = ConnectionStatus.CONNECTED_AS_CLIENT
 	# Client now needs to send its name to the server.
 	rpc_id(1, "server_receive_player_info", player_name) # RPC to server (ID 1)
 	emit_signal("connection_succeeded", false) # false for is_server
 
 func _on_mp_api_connection_failed():
-	printerr("NetworkManager: Connection failed!")
+	printerr("ConnectionManager: Connection failed!")
 	multiplayer.multiplayer_peer = null
 	get_tree().multiplayer_peer = null
 	connection_status = ConnectionStatus.CONNECTION_FAILED
@@ -192,7 +195,7 @@ func server_receive_player_info(p_name: String):
 	var sender_id = multiplayer.get_remote_sender_id()
 	# No need to check if sender_id is 0 here, as this RPC is only called by actual clients.
 	
-	print("NetworkManager (Server): Received player info from ID ", sender_id, ": ", p_name)
+	print("ConnectionManager (Server): Received player info from ID ", sender_id, ": ", p_name)
 	if players.has(sender_id):
 		players[sender_id].name = p_name
 	else: 
@@ -207,7 +210,7 @@ func server_receive_player_info(p_name: String):
 
 @rpc("reliable") # Called by server on all clients
 func client_receive_initial_lobby_state(initial_players_state: Dictionary):
-	print("NetworkManager (Client ", multiplayer.get_unique_id(), "): Received initial lobby state: ", initial_players_state)
+	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Received initial lobby state: ", initial_players_state)
 	players = initial_players_state.duplicate() # Make a copy
 	emit_signal("player_list_updated", players)
 	# Also update local ready status if present
@@ -247,14 +250,14 @@ func server_set_player_ready(is_ready: bool):
 
 @rpc("reliable") 
 func client_update_player_readiness(peer_id: int, is_ready: bool):
-	print("!!! NetworkManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_player_readiness received. For Peer:", peer_id, " IsReady:", is_ready) 
-	print("NetworkManager (Client ", multiplayer.get_unique_id(), "): client_update_player_readiness called for peer ", peer_id, " is_ready: ", is_ready) # DEBUG
+	print("!!! ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_player_readiness received. For Peer:", peer_id, " IsReady:", is_ready) 
+	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): client_update_player_readiness called for peer ", peer_id, " is_ready: ", is_ready) # DEBUG
 	if players.has(peer_id): # Check if players dict on client has this peer (it might not yet if this is the first update)
 		players[peer_id].is_ready = is_ready
 	else: # If client doesn't know this peer yet, it will get full list from player_list_updated
-		print("	 NetworkManager (Client ", multiplayer.get_unique_id(), "): Peer ", peer_id, " not in local players dict yet for readiness update.")
+		print("	 ConnectionManager (Client ", multiplayer.get_unique_id(), "): Peer ", peer_id, " not in local players dict yet for readiness update.")
 	
-	print("	 NetworkManager (Client ", multiplayer.get_unique_id(), "): Emitting player_readiness_updated signal for peer ", peer_id) # DEBUG
+	print("	 ConnectionManager (Client ", multiplayer.get_unique_id(), "): Emitting player_readiness_updated signal for peer ", peer_id) # DEBUG
 	emit_signal("player_readiness_updated", peer_id, is_ready)
 
 
@@ -271,7 +274,7 @@ func _check_and_emit_all_players_ready():
 			break
 	emit_signal("all_players_ready_status_changed", all_are_ready)
 	if all_are_ready:
-		print("NetworkManager (Server): All players are ready! Starting countdown.")
+		print("ConnectionManager (Server): All players are ready! Starting countdown.")
 		_start_game_countdown_on_server()
 
 
@@ -298,34 +301,32 @@ func _start_game_countdown_on_server(duration: int = 3):
 
 	_countdown_timer.timeout.connect(func():
 		_current_game_countdown_value -= 1
-		# RPC to remote clients for subsequent updates
 		rpc("client_update_countdown_display", _current_game_countdown_value)
-		# Explicitly call for the host's local client instance
-		if multiplayer.get_unique_id() == 1:
-			# print("  NM Server (countdown_tick): Forcing local client update for countdown: ", _current_game_countdown_value) # Can be noisy
-			client_update_countdown_display(_current_game_countdown_value) # <<< ADD THIS
-
-		if _current_game_countdown_value <= 0: # Check after decrementing and RPCing the current value
+		
+		if _current_game_countdown_value <= 0:
 			_countdown_timer.stop()
-			_countdown_timer.queue_free()
-			_countdown_timer = null
-			# The client_update_countdown_display(0) was already sent.
 			
-			# Tell clients to load game scene
-			rpc("client_start_game_now_rpc") 
-			# Server also loads game scene (which will emit start_game_now for its lobby)
-			_load_game_scene_for_server() 
+			# 1. Reset the loading counter
+			players_loaded_count = 0
+			
+			# 2. Tell everyone (including self) to load the scene
+			# This replaces the old "start_game_now" logic
+			rpc("client_load_game_scene") 
+			
+			# Server loads it too (if not headless/dedicated structure)
+			# If strictly headless, the server might just instantiate BattleManager here.
+			emit_signal("load_game_scene")
 	)
 	_countdown_timer.start()
 
 @rpc("reliable")
 func client_update_countdown_display(time_left: int):
-	print("!!! NetworkManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_countdown_display received. Time Left:", time_left)
+	print("!!! ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_countdown_display received. Time Left:", time_left)
 	emit_signal("game_starting_countdown", time_left)
 
 @rpc("reliable")
 func client_start_game_now_rpc():
-	print("NetworkManager (Client ", multiplayer.get_unique_id(), "): Received start_game_now RPC.")
+	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Received start_game_now RPC.")
 	emit_signal("start_game_now")
 	# UI (Lobby scenes) will connect to this signal to change to GameScene.tscn
 
@@ -334,9 +335,34 @@ func _load_game_scene_for_server():
 	# and other logic, but not necessarily changing its own scene if it's headless
 	# or if the HostLobby also contains the game.
 	# For now, we'll assume the host also transitions.
-	print("NetworkManager (Server): Loading game scene.")
+	print("ConnectionManager (Server): Loading game scene.")
 	emit_signal("start_game_now")
 
+
+@rpc("call_local", "reliable")
+func client_load_game_scene():
+	print("ConnectionManager: Loading Game Scene...")
+	emit_signal("load_game_scene")
+	
+	# CLIENT SIDE LOGIC (To be implemented later in Client Main):
+	# 1. Change Scene to Game.tscn
+	# 2. In Game.tscn _ready(), call ConnectionManager.notify_server_level_loaded()
+
+# Called by the Client AFTER they finish loading the Game Scene
+@rpc("any_peer", "call_remote", "reliable")
+func notify_server_level_loaded():
+	if not multiplayer.is_server(): return
+	
+	var sender_id = multiplayer.get_remote_sender_id()
+	print("ConnectionManager: Peer ", sender_id, " finished loading game scene.")
+	
+	players_loaded_count += 1
+	
+	# Check if everyone is here
+	# (Assuming 2 players for now)
+	if players_loaded_count >= max_players:
+		print("ConnectionManager: All players loaded. STARTING GAME LOGIC.")
+		emit_signal("all_clients_loaded_game_scene")
 
 # Helper (Optional)
 func get_local_ip_addresses() -> Array[String]:
@@ -344,7 +370,7 @@ func get_local_ip_addresses() -> Array[String]:
 	var lan_ipv4_candidates: Array[String] = []
 	var other_ips: Array[String] = [] # For less common but potentially valid IPs
 
-	print("NetworkManager: All detected local IPs: ", all_ips)
+	print("ConnectionManager: All detected local IPs: ", all_ips)
 
 	for ip_string in all_ips:
 		if ip_string.begins_with("192.168.") or \
@@ -358,14 +384,14 @@ func get_local_ip_addresses() -> Array[String]:
 		# We are generally ignoring IPv6 link-local (fe80::) and IPv4 link-local (169.254) for user display
 
 	if not lan_ipv4_candidates.is_empty():
-		print("NetworkManager: Found LAN IPv4 candidates: ", lan_ipv4_candidates)
+		print("ConnectionManager: Found LAN IPv4 candidates: ", lan_ipv4_candidates)
 		return lan_ipv4_candidates # Return all likely LAN IPs
 	elif not other_ips.is_empty():
-		print("NetworkManager: No standard LAN IPv4 found, returning other IPs: ", other_ips)
+		print("ConnectionManager: No standard LAN IPv4 found, returning other IPs: ", other_ips)
 		return other_ips # Fallback to other non-loopback/non-link-local IPv4s
 	elif not all_ips.is_empty():
-		print("NetworkManager: No ideal LAN IP found, returning first detected IP: ", [all_ips[0]])
+		print("ConnectionManager: No ideal LAN IP found, returning first detected IP: ", [all_ips[0]])
 		return [all_ips[0]] # Last resort, show the first one (might be loopback)
 	else:
-		print("NetworkManager: No local IP addresses found.")
+		print("ConnectionManager: No local IP addresses found.")
 		return []
