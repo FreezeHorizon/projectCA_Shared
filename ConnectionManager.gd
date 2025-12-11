@@ -15,6 +15,7 @@ signal start_game_now # Server tells clients to switch to game scene
 signal load_game_scene 
 signal all_clients_loaded_game_scene
 var players_loaded_count: int = 0
+var is_dedicated_server: bool = false
 
 # --- Properties ---
 var player_name: String = "Player" # Default name
@@ -95,7 +96,9 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 	print("ConnectionManager: Server started. Local Peer ID: ", multiplayer.get_unique_id()) # Should be 1
 	
 	var host_id = multiplayer.get_unique_id() 
-	players[host_id] = {"name": player_name, "is_ready": false}
+	
+	if not is_dedicated_server:
+		players[host_id] = {"name": player_name, "is_ready": false}
 	
 	emit_signal("connection_succeeded", true) 
 	emit_signal("player_list_updated", players)
@@ -144,6 +147,7 @@ func disconnect_from_game():
 func _on_mp_api_peer_connected(id: int):
 	print("ConnectionManager: Peer connected: ", id)
 	if multiplayer.is_server():
+		if is_dedicated_server and id == 1: return
 		players[id] = {"name": "Player_" + str(id), "is_ready": false} # Add with placeholder
 		emit_signal("peer_connected_to_server", id, players[id].name)
 		
@@ -151,7 +155,7 @@ func _on_mp_api_peer_connected(id: int):
 		rpc("client_receive_initial_lobby_state", players) 
 		
 		# Also update host's own local client view
-		print("	 NM Server (peer_connected): Forcing local client update with initial lobby state.")
+		print("Server (peer_connected): local client update with initial lobby state.")
 		client_receive_initial_lobby_state(players) 
 
 		_check_and_emit_all_players_ready()
@@ -205,7 +209,7 @@ func server_receive_player_info(p_name: String):
 	rpc("client_receive_initial_lobby_state", players)
 	
 	# Also update host's own local client view with the latest list
-	print("	 NM Server (receive_player_info): Forcing local client update with initial lobby state.")
+	print("Server (receive_player_info): Forcing local client update with initial lobby state.")
 	client_receive_initial_lobby_state(players)
 
 @rpc("reliable") # Called by server on all clients
@@ -229,11 +233,11 @@ func server_set_player_ready(is_ready: bool):
 	
 	var peer_id_that_changed_status = rpc_sender_id
 
-	print("NM Server: server_set_player_ready for Peer ID ", peer_id_that_changed_status, " to is_ready = ", is_ready)
+	print("Server: server_set_player_ready for Peer ID ", peer_id_that_changed_status, " to is_ready = ", is_ready)
 
 	if players.has(peer_id_that_changed_status):
 		players[peer_id_that_changed_status].is_ready = is_ready
-		print("	 NM Server: Player ID ", peer_id_that_changed_status, " readiness in 'players' dict updated.")
+		print("Server: Player ID ", peer_id_that_changed_status, " readiness in 'players' dict updated.")
 		
 		# Option 1: Broadcast to all remote peers
 		for peer_id_to_notify in multiplayer.get_peers(): # get_peers() returns IDs of OTHERS
@@ -241,23 +245,23 @@ func server_set_player_ready(is_ready: bool):
 				rpc_id(peer_id_to_notify, "client_update_player_readiness", peer_id_that_changed_status, is_ready)
 		
 		# Option 2: Always run it locally on the server (host) as well, as it's also a client
-		print("	 NM Server: Processing local client update for readiness change of peer ", peer_id_that_changed_status)
+		print("Server: Processing local client update for readiness change of peer ", peer_id_that_changed_status)
 		client_update_player_readiness(peer_id_that_changed_status, is_ready) # Server's own client instance processes
 
 		_check_and_emit_all_players_ready() 
 	else:
-		printerr("NM Server: Received ready status from unknown Peer ID: ", peer_id_that_changed_status)
+		printerr("Server: Received ready status from unknown Peer ID: ", peer_id_that_changed_status)
 
 @rpc("reliable") 
 func client_update_player_readiness(peer_id: int, is_ready: bool):
-	print("!!! ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_player_readiness received. For Peer:", peer_id, " IsReady:", is_ready) 
+	print("ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_player_readiness received. For Peer:", peer_id, " IsReady:", is_ready) 
 	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): client_update_player_readiness called for peer ", peer_id, " is_ready: ", is_ready) # DEBUG
 	if players.has(peer_id): # Check if players dict on client has this peer (it might not yet if this is the first update)
 		players[peer_id].is_ready = is_ready
 	else: # If client doesn't know this peer yet, it will get full list from player_list_updated
-		print("	 ConnectionManager (Client ", multiplayer.get_unique_id(), "): Peer ", peer_id, " not in local players dict yet for readiness update.")
+		print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Peer ", peer_id, " not in local players dict yet for readiness update.")
 	
-	print("	 ConnectionManager (Client ", multiplayer.get_unique_id(), "): Emitting player_readiness_updated signal for peer ", peer_id) # DEBUG
+	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Emitting player_readiness_updated signal for peer ", peer_id) # DEBUG
 	emit_signal("player_readiness_updated", peer_id, is_ready)
 
 
@@ -296,7 +300,7 @@ func _start_game_countdown_on_server(duration: int = 3):
 	rpc("client_update_countdown_display", _current_game_countdown_value) 
 	# Explicitly call for the host's local client instance
 	if multiplayer.get_unique_id() == 1: # If I am the server/host
-		print("  NM Server (countdown_start): Forcing local client update for countdown: ", _current_game_countdown_value)
+		print("  Server (countdown_start): Forcing local client update for countdown: ", _current_game_countdown_value)
 		client_update_countdown_display(_current_game_countdown_value) # <<< ADD THIS
 
 	_countdown_timer.timeout.connect(func():
@@ -321,7 +325,7 @@ func _start_game_countdown_on_server(duration: int = 3):
 
 @rpc("reliable")
 func client_update_countdown_display(time_left: int):
-	print("!!! ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_countdown_display received. Time Left:", time_left)
+	print("ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_countdown_display received. Time Left:", time_left)
 	emit_signal("game_starting_countdown", time_left)
 
 @rpc("reliable")
