@@ -26,12 +26,12 @@ func _ready() -> void:
 	
 	# Client Side
 	if not OS.has_feature("server"):
+		game_board_reference = get_node_or_null("../GameBoard")
 		selection = get_node_or_null("CardSelectionManager")
-		mulligan_manager = get_node_or_null("MulliganManager")
+		mulligan_manager = get_node_or_null("../GameBoard/MulliganManager")
 		screen_size = get_viewport_rect().size
-		player_hand_reference = get_node_or_null("PlayerHand")
-		game_board_reference = get_node_or_null("GameBoard")
-		input_manager = get_node_or_null("InputManager")
+		player_hand_reference = get_node_or_null("../GameBoard/PlayerHand")
+		input_manager = get_node_or_null("../GameBoard/InputManager")
 		# Connect input signals
 		input_manager.connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
 		input_manager.connect("left_mouse_button_clicked", Callable(self, "left_mouse_button_clicked"))

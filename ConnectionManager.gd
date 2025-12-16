@@ -11,7 +11,6 @@ signal player_list_updated(players: Dictionary) # {peer_id: {"name": "name", "is
 signal player_readiness_updated(peer_id: int, is_ready: bool)
 signal all_players_ready_status_changed(all_ready: bool) # Emitted by server when all/not all are ready
 signal game_starting_countdown(time_left: int)
-signal start_game_now # Server tells clients to switch to game scene
 signal load_game_scene 
 signal all_clients_loaded_game_scene
 var players_loaded_count: int = 0
@@ -262,7 +261,7 @@ func client_update_player_readiness(peer_id: int, is_ready: bool):
 		print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Peer ", peer_id, " not in local players dict yet for readiness update.")
 	
 	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Emitting player_readiness_updated signal for peer ", peer_id) # DEBUG
-	emit_signal("player_readiness_updated", peer_id, is_ready)
+	emit_signal("player_list_updated", players)
 
 
 func _check_and_emit_all_players_ready():
@@ -299,9 +298,9 @@ func _start_game_countdown_on_server(duration: int = 3):
 	# RPC to remote clients for initial display
 	rpc("client_update_countdown_display", _current_game_countdown_value) 
 	# Explicitly call for the host's local client instance
-	if multiplayer.get_unique_id() == 1: # If I am the server/host
+	if multiplayer.get_unique_id() == 1 and not is_dedicated_server: # If I am the server/host
 		print("  Server (countdown_start): Forcing local client update for countdown: ", _current_game_countdown_value)
-		client_update_countdown_display(_current_game_countdown_value) # <<< ADD THIS
+		client_update_countdown_display(_current_game_countdown_value)
 
 	_countdown_timer.timeout.connect(func():
 		_current_game_countdown_value -= 1
@@ -328,29 +327,11 @@ func client_update_countdown_display(time_left: int):
 	print("ConnectionManager (Instance ID:", multiplayer.get_unique_id(), "): client_update_countdown_display received. Time Left:", time_left)
 	emit_signal("game_starting_countdown", time_left)
 
-@rpc("reliable")
-func client_start_game_now_rpc():
-	print("ConnectionManager (Client ", multiplayer.get_unique_id(), "): Received start_game_now RPC.")
-	emit_signal("start_game_now")
-	# UI (Lobby scenes) will connect to this signal to change to GameScene.tscn
-
-func _load_game_scene_for_server():
-	# For the server, "loading the game scene" means preparing BattleManager
-	# and other logic, but not necessarily changing its own scene if it's headless
-	# or if the HostLobby also contains the game.
-	# For now, we'll assume the host also transitions.
-	print("ConnectionManager (Server): Loading game scene.")
-	emit_signal("start_game_now")
-
 
 @rpc("call_local", "reliable")
 func client_load_game_scene():
 	print("ConnectionManager: Loading Game Scene...")
 	emit_signal("load_game_scene")
-	
-	# CLIENT SIDE LOGIC (To be implemented later in Client Main):
-	# 1. Change Scene to Game.tscn
-	# 2. In Game.tscn _ready(), call ConnectionManager.notify_server_level_loaded()
 
 # Called by the Client AFTER they finish loading the Game Scene
 @rpc("any_peer", "call_remote", "reliable")

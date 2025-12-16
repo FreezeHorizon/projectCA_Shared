@@ -6,7 +6,7 @@ var game_board_reference: Node2D
 var battle_manager: Node
 # Initialize with references to key systems
 func _ready() -> void:
-	battle_manager = $"../../BattleManager"
+	battle_manager = get_node_or_null("../../BattleManager")
 	
 func initialize(manager: Node2D, board: Node2D) -> void:
 	card_manager = manager

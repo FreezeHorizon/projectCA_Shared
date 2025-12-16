@@ -1,8 +1,8 @@
-class_name NetworkInterface
 extends Node
 
 # Reference to BattleManager (Logic on Server, Event Handler on Client)
-@onready var battle_manager = get_parent().get_node("BattleManager")
+@onready var battle_manager = get_parent().get_node_or_null("BattleManager")
+signal mulligan_options_received(card_names: Array)
 
 func _ready():
 	# Only the Server listens to Game Loop signals to broadcast them
@@ -94,3 +94,10 @@ func client_handle_retaliation(retaliator_id: int, attacker_id: int):
 func client_handle_flip(card_id: int, is_face_down: bool):
 	if OS.has_feature("server"): return
 	print("Client: Flip animation!")
+
+@rpc("authority", "call_remote", "reliable")
+func client_receive_mulligan_options(card_names: Array):
+	if OS.has_feature("server"): return # Server ignores this
+
+	print("Client: Received mulligan options: ", card_names)
+	emit_signal("mulligan_options_received", card_names)
