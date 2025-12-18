@@ -95,9 +95,24 @@ func client_handle_flip(card_id: int, is_face_down: bool):
 	if OS.has_feature("server"): return
 	print("Client: Flip animation!")
 
-@rpc("authority", "call_remote", "reliable")
+@rpc("authority", "call_local", "reliable")
 func client_receive_mulligan_options(card_names: Array):
 	if OS.has_feature("server"): return # Server ignores this
 
 	print("Client: Received mulligan options: ", card_names)
 	emit_signal("mulligan_options_received", card_names)
+
+func notify_client_mulligan_start(player_num: int, cards: Array):
+	# Convert Game Player Number (1, 2) to Network Peer ID (1, 348215, etc.)
+	var target_peer_id = ConnectionManager.get_peer_id_for_player(player_num)
+	
+	if target_peer_id == -1:
+		printerr("NetworkInterface: Could not find peer ID for Player ", player_num)
+		return
+
+	var card_data_array = []
+	for card in cards:
+		card_data_array.append(card.db_key)
+	
+	# Send to the correct network ID
+	client_receive_mulligan_options.rpc_id(target_peer_id, card_data_array)

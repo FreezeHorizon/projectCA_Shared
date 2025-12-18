@@ -15,7 +15,7 @@ signal load_game_scene
 signal all_clients_loaded_game_scene
 var players_loaded_count: int = 0
 var is_dedicated_server: bool = false
-
+var game_has_started: bool = false
 # --- Properties ---
 var player_name: String = "Player" # Default name
 const DEFAULT_PORT: int = 7777 
@@ -66,6 +66,23 @@ func set_player_name(p_name: String):
 func get_player_name() -> String:
 	return player_name
 
+func get_peer_id_for_player(player_num: int) -> int:
+	var sorted_ids = players.keys()
+	sorted_ids.sort() # Ensure consistent order: [HostID, ClientID]
+	
+	if is_dedicated_server:
+		# Dedicated Server: ID 1 is not a player.
+		# Player 1 is sorted_ids[0], Player 2 is sorted_ids[1]
+		if player_num == 1 and sorted_ids.size() > 0: return sorted_ids[0]
+		if player_num == 2 and sorted_ids.size() > 1: return sorted_ids[1]
+	else:
+		# Listen Server: ID 1 is the Host (Player 1).
+		# Player 1 is sorted_ids[0] (which is 1), Player 2 is sorted_ids[1]
+		if player_num == 1 and sorted_ids.size() > 0: return sorted_ids[0]
+		if player_num == 2 and sorted_ids.size() > 1: return sorted_ids[1]
+		
+	return -1 # Not found
+
 # --- Hosting ---
 func host_game(port: int = DEFAULT_PORT) -> bool:
 	print("ConnectionManager: Attempting to host game on port ", port)
@@ -101,6 +118,7 @@ func host_game(port: int = DEFAULT_PORT) -> bool:
 	
 	emit_signal("connection_succeeded", true) 
 	emit_signal("player_list_updated", players)
+	print_stack()
 	return true
 
 # --- Joining ---
@@ -337,7 +355,9 @@ func client_load_game_scene():
 @rpc("any_peer", "call_remote", "reliable")
 func notify_server_level_loaded():
 	if not multiplayer.is_server(): return
-	
+	if game_has_started: 
+		print("ConnectionManager: Game already started. Ignoring load signal.")
+		return
 	var sender_id = multiplayer.get_remote_sender_id()
 	print("ConnectionManager: Peer ", sender_id, " finished loading game scene.")
 	
@@ -347,6 +367,8 @@ func notify_server_level_loaded():
 	# (Assuming 2 players for now)
 	if players_loaded_count >= max_players:
 		print("ConnectionManager: All players loaded. STARTING GAME LOGIC.")
+		game_has_started = true
+		print_stack()
 		emit_signal("all_clients_loaded_game_scene")
 
 # Helper (Optional)
