@@ -13,19 +13,26 @@ func initialize(manager: Node2D, board: Node2D) -> void:
 	game_board_reference = board
 
 # Check if a card can be legally placed at a given slot according to game rules
-func is_valid_card_placement(slot: Node2D, card: BaseCard) -> bool:
+func is_valid_card_placement(slot: Node, card: BaseCard, current_player_id: int, p1_emperor_slot: Node, p2_emperor_slot: Node) -> bool:
 	var card_data = card.get_current_card_data_dict()
+	var active_emperor_slot = p1_emperor_slot if current_player_id == 1 else p2_emperor_slot
 
-	# Cannot place non-emperor cards if no emperor exists yet
-	if card_manager.emperor_position[%BattleManager.current_player_id-1] == null and card_data["type"] != 0 and (%BattleManager.current_player_id-1) == 0:
+	# Rule: Cannot place non-emperor if no emperor exists yet
+	if active_emperor_slot == null and card_data["type"] != GameConstants.CardType.EMPEROR:
 		return false
 	
-	# Emperor cards can only be placed if no emperor exists
-	if card_data["type"] == 0:
-		return card_manager.emperor_position[%BattleManager.current_player_id-1] == null
+	# Rule: Emperor can only be placed if no emperor exists
+	if card_data["type"] == GameConstants.CardType.EMPEROR:
+		return active_emperor_slot == null
+	
+	# Rule 1: Place within range of emperor
+	if active_emperor_slot != null:
+		var distance = calculate_manhattan_distance(slot, active_emperor_slot)
+		if distance <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
+			return true
 	
 	# Rule 1: Cards can be placed within range of emperor
-	if card_manager.emperor_position[%BattleManager.current_player_id-1] != null:
+	if card_manager.emperor_position != null:
 		var distance_to_emperor = calculate_manhattan_distance(slot, card_manager.emperor_position[%BattleManager.current_player_id-1])
 		if distance_to_emperor <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
 			return true
@@ -42,22 +49,13 @@ func is_valid_card_placement(slot: Node2D, card: BaseCard) -> bool:
 	return false
 
 # Visually highlight valid placement locations for a card being dragged
-func display_valid_placements(card: Node2D) -> void:
-	var card_data = card.get_current_card_data_dict() # Get the card's data (type, stats, etc.)
-	var is_emperor = card_data["type"] == 0	 # Type 0 represents emperor cards
-	
+func display_valid_placements(card: Node, current_player_id: int, p1_emperor_slot: Node, p2_emperor_slot: Node):
+	if OS.has_feature("server"): return
 	# Iterate through all board slots to check valid placements
 	var card_slots = get_tree().get_nodes_in_group("CardSlots")
 	
 	for slot in card_slots:
-		var valid_placement = false
-		
-		if is_emperor:
-			# Emperor cards can be placed anywhere if no emperor exists yet
-			valid_placement = card_manager.emperor_position[%BattleManager.current_player_id-1] == null
-		else:
-			# Other cards need to follow placement rules (near emperor or allies)
-			valid_placement = is_valid_card_placement(slot, card)
+		var valid_placement = is_valid_card_placement(slot, card, current_player_id, p1_emperor_slot, p2_emperor_slot)
 		
 		# Update the slot's visual state if it's a valid placement and not occupied
 		if valid_placement and not slot.is_occupied:

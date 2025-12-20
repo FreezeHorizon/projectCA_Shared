@@ -1,7 +1,7 @@
 extends Node
 
 # Core references
-var card_manager: Node
+var card_manager: Node2D
 @onready var game_board_reference: Node = $"../../GameBoard"
 var emperor_position: Node2D = null
 var player_hand_reference: Array = [null, null]

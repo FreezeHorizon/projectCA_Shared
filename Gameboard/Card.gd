@@ -116,10 +116,10 @@ func _update_visual_state() -> void:
 		printerr(name, ": CardImage or CardBackImage node missing in _update_visual_state!")
 		return
 
-	print(name, ": _update_visual_state() called. is_face_down = ", is_face_down, ", card_is_in_slot = ", is_instance_valid(card_is_in_slot))
+	#print(name, ": _update_visual_state() called. is_face_down = ", is_face_down, ", card_is_in_slot = ", is_instance_valid(card_is_in_slot))
 
 	if not is_instance_valid(card_is_in_slot): # Card is IN HAND (Player's perspective)
-		print("	 Card.gd: In hand. Forcing face-up.")
+		#print("	 Card.gd: In hand. Forcing face-up.")
 		card_image_node.visible = true
 		card_back_image_node.visible = false
 		if is_instance_valid(ap_cost_node): ap_cost_node.visible = true
