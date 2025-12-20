@@ -104,7 +104,7 @@ func start_drag(card: Node2D) -> void:
 			print("  ERROR: player_hand_reference does not have remove_card_from_hand")
 		card_being_dragged = card
 		# Update card state
-		card.state_machine.transition_to(card.state_machine.State.DRAGGING, GameConstants.TriggerSource.PLAYER_CHOICE)
+		card.state_machine.transition_to(card.state_machine.State.DRAGGING, {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 		
 		# Reset all visual overlays before showing new ones
 		reset_all_slot_overlays()
@@ -122,7 +122,7 @@ func start_drag(card: Node2D) -> void:
 	#    player_hand_reference.remove_card_from_hand(card)
 		
 	card_being_dragged = card
-	card.state_machine.transition_to(card.state_machine.State.DRAGGING,GameConstants.TriggerSource.PLAYER_CHOICE)
+	card.state_machine.transition_to(card.state_machine.State.DRAGGING,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	
 	reset_all_slot_overlays()
 	var placement_validator = get_node("PlacementValidator") # Assuming it's a child

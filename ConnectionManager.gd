@@ -13,14 +13,18 @@ signal all_players_ready_status_changed(all_ready: bool) # Emitted by server whe
 signal game_starting_countdown(time_left: int)
 signal load_game_scene 
 signal all_clients_loaded_game_scene
+signal player_identity_assigned(player_num: int)
+
 var players_loaded_count: int = 0
 var is_dedicated_server: bool = false
 var game_has_started: bool = false
+
 # --- Properties ---
 var player_name: String = "Player" # Default name
 const DEFAULT_PORT: int = 7777 
 var current_port: int = DEFAULT_PORT
 var max_players: int = 2
+var my_player_number: int = -1
 var _current_game_countdown_value: int = 0
 enum ConnectionStatus {
 	DISCONNECTED,
@@ -82,6 +86,22 @@ func get_peer_id_for_player(player_num: int) -> int:
 		if player_num == 2 and sorted_ids.size() > 1: return sorted_ids[1]
 		
 	return -1 # Not found
+
+func get_player_num_for_peer_id(peer_id: int) -> int:
+	var sorted_ids = players.keys()
+	sorted_ids.sort()
+	
+	if is_dedicated_server:
+		if sorted_ids.size() > 0 and sorted_ids[0] == peer_id: return 1
+		if sorted_ids.size() > 1 and sorted_ids[1] == peer_id: return 2
+	else:
+		# Listen server: Host (1) is always P1
+		if peer_id == 1: return 1 # Host is P1
+		# The first client ID in the list is P2
+		if sorted_ids.size() > 1 and sorted_ids[1] == peer_id: return 2
+		
+	return -1 # Not found
+
 
 # --- Hosting ---
 func host_game(port: int = DEFAULT_PORT) -> bool:
@@ -159,16 +179,22 @@ func disconnect_from_game():
 	emit_signal("player_list_updated", players) 
 	emit_signal("all_players_ready_status_changed", false)
 
+@rpc("authority", "call_remote", "reliable")
+func assign_player_number(p_num: int):
+	my_player_number = p_num
+	print("ConnectionManager: I have been assigned Player Number: ", my_player_number)
+	emit_signal("player_identity_assigned", my_player_number)
 
 # --- MultiplayerAPI Signal Handlers ---
 func _on_mp_api_peer_connected(id: int):
 	print("ConnectionManager: Peer connected: ", id)
 	if multiplayer.is_server():
 		if is_dedicated_server and id == 1: return
-		players[id] = {"name": "Player_" + str(id), "is_ready": false} # Add with placeholder
+		
+		players[id] = {"name": "Player_" + str(id), "is_ready": false}
+		assign_player_number.rpc_id(id, get_player_num_for_peer_id(id))
 		emit_signal("peer_connected_to_server", id, players[id].name)
 		
-		# Broadcast to remote clients
 		rpc("client_receive_initial_lobby_state", players) 
 		
 		# Also update host's own local client view
@@ -214,7 +240,6 @@ func _on_mp_api_connection_failed():
 func server_receive_player_info(p_name: String):
 	if not multiplayer.is_server(): return
 	var sender_id = multiplayer.get_remote_sender_id()
-	# No need to check if sender_id is 0 here, as this RPC is only called by actual clients.
 	
 	print("ConnectionManager (Server): Received player info from ID ", sender_id, ": ", p_name)
 	if players.has(sender_id):
@@ -222,12 +247,15 @@ func server_receive_player_info(p_name: String):
 	else: 
 		players[sender_id] = {"name": p_name, "is_ready": false}
 	
-	# Broadcast updated player list to everyone (remote clients)
+	# --- THIS IS THE FIX ---
+	# Immediately tell the client who they are.
+	var player_num = get_player_num_for_peer_id(sender_id)
+	if player_num != -1:
+		assign_player_number.rpc_id(sender_id, player_num)
+	# -----------------------
+
+	# Broadcast updated player list to everyone
 	rpc("client_receive_initial_lobby_state", players)
-	
-	# Also update host's own local client view with the latest list
-	print("Server (receive_player_info): Forcing local client update with initial lobby state.")
-	client_receive_initial_lobby_state(players)
 
 @rpc("reliable") # Called by server on all clients
 func client_receive_initial_lobby_state(initial_players_state: Dictionary):

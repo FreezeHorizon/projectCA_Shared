@@ -16,3 +16,4 @@ var deck_node: Node
 var setup_complete: bool = false
 var deck_cards: Array[BaseCard] = [] # List of Card IDs (e.g. "Bilwis", "Irad")
 var hand_cards: Array[BaseCard] = []
+var mulligan_cards: Array[BaseCard] = []

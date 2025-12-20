@@ -273,7 +273,7 @@ func _place_on_board() -> void:
 		
 		# Enable collision after animation
 		call_deferred("_enable_board_collision")
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.ENTER,trigger_source)
 
 func _enable_board_collision() -> void:
@@ -323,7 +323,7 @@ func _start_moving() -> void:
 	if not _is_server():
 		card.scale = state_config[State.MOVING]["scale"]
 		card.z_index = state_config[State.MOVING]["z_index"]
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.MOVE, trigger_source)
 
 func _start_attacking() -> void:
@@ -335,7 +335,7 @@ func _start_attacking() -> void:
 		if selected: selected.stop() # Use get_node_or_null to be safe
 	
 	# Logic
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.ATTACK, trigger_source)
 
 func _take_damage() -> void:

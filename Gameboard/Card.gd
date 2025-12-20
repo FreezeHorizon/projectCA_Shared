@@ -1,4 +1,3 @@
-# Card.gd (Player Card)
 class_name Card extends BaseCard # Inherits from BaseCard
 
 signal hovered(card_instance: Card) 

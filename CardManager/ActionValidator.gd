@@ -2,9 +2,9 @@ extends Node
 
 @onready var placement_validator = $"../CardManager/PlacementValidator"
 @onready var board_state_manager = $"../CardManager/BoardStateManager"
+@onready var battle_manager = get_node("/root/Server/BattleManager")
 
-
-func validate_play_card(player: Player, card: BaseCard, target_slot: Node2D) -> bool:
+func validate_play_card(player: Player, card: BaseCard, target_slot: Node) -> bool:
 	# 1. Check if target_slot exists
 	if not target_slot:
 		print("Validation Failed: No target slot.")
@@ -24,9 +24,12 @@ func validate_play_card(player: Player, card: BaseCard, target_slot: Node2D) -> 
 	if target_slot.is_occupied:
 		print("Validation Failed: Slot occupied.")
 		return false
+	
+	var p1_emp = battle_manager.card_manager.emperor_position[0]
+	var p2_emp = battle_manager.card_manager.emperor_position[1]
 
 	# 5. Check Placement Rules (Range, etc.)
-	if not placement_validator.is_valid_card_placement(target_slot, card):
+	if not placement_validator.is_valid_card_placement(target_slot, card, player.player_id, p1_emp, p2_emp):
 		print("Validation Failed: Invalid placement position.")
 		return false
 
