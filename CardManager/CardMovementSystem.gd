@@ -1,7 +1,7 @@
 extends Node
 
 # Core references
-var card_manager: Node
+var card_manager: Node2D
 @onready var game_board_reference: Node = $"../../GameBoard"
 var emperor_position: Node2D = null
 var player_hand_reference: Array = [null, null]
@@ -136,7 +136,7 @@ func place_card_in_slot(card: Node2D, slot: Node2D) -> void:
 	card.position = slot.position
 	card.card_is_in_slot = slot
 	# Change card state to indicate it's now on the board
-	card.state_machine.transition_to(card.state_machine.State.ON_BOARD_ENTER,GameConstants.TriggerSource.PLAYER_CHOICE)
+	card.state_machine.transition_to(card.state_machine.State.ON_BOARD_ENTER,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	
 	# Store original Y position for animations like highlighting
 	card.set_meta("original_y", slot.position.y)

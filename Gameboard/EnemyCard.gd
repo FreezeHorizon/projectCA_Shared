@@ -1,4 +1,3 @@
-# EnemyCard.gd
 class_name EnemyCard extends BaseCard # Inherits from BaseCard
 
 #-----------------------------------------------------------------------------

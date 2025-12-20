@@ -19,36 +19,52 @@ var mulligan_manager: Control
 var input_manager 
 # Initialize components
 func _ready() -> void:
-	
+	# These are direct children of CardManager, so no path prefix needed
 	movement = get_node_or_null("CardMovementSystem")
 	board_state = get_node_or_null("BoardStateManager")
 	placement = get_node_or_null("PlacementValidator")
 	
-	# Client Side
+	# Client Side Logic
 	if not OS.has_feature("server"):
+		# 1. Selection is a DIRECT CHILD of CardManager
+		selection = get_node_or_null("CardSelectionManager") 
+		print("DEBUG: Searching for CardSelectionManager...")
+		var test_node = get_node_or_null("CardSelectionManager")
+		print("DEBUG: Found: ", test_node)
+		selection = test_node
+		# 2. GameBoard is a SIBLING of CardManager
 		game_board_reference = get_node_or_null("../GameBoard")
-		selection = get_node_or_null("CardSelectionManager")
-		mulligan_manager = get_node_or_null("../GameBoard/MulliganManager")
+		
+		# 3. These are CHILDREN OF GAMEBOARD (Sibling -> Child)
+		if game_board_reference:
+			mulligan_manager = game_board_reference.get_node_or_null("MulliganManager")
+			player_hand_reference = game_board_reference.get_node_or_null("PlayerHand")
+			input_manager = game_board_reference.get_node_or_null("InputManager")
+		
+		# 4. Connect Signals (Only if input_manager was found)
+		if input_manager:
+			input_manager.connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
+			input_manager.connect("left_mouse_button_clicked", Callable(self, "left_mouse_button_clicked"))
+		
 		screen_size = get_viewport_rect().size
-		player_hand_reference = get_node_or_null("../GameBoard/PlayerHand")
-		input_manager = get_node_or_null("../GameBoard/InputManager")
-		# Connect input signals
-		input_manager.connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
-		input_manager.connect("left_mouse_button_clicked", Callable(self, "left_mouse_button_clicked"))
 
 	# Initialize subsystems and pass references
 	initialize_subsystems()
 
 # Initialize all subsystems with necessary references
 func initialize_subsystems() -> void:
-	# Provide references to key game objects to all subsystems
-	movement.initialize(self, game_board_reference)
-	board_state.initialize(self, game_board_reference)
-	placement.initialize(self, game_board_reference)
-	selection.initialize(self, game_board_reference)
+	# Shared subsystems (Movement, BoardState, Placement) are always valid
+	if movement: movement.initialize(self, game_board_reference)
+	if board_state: board_state.initialize(self, game_board_reference)
+	if placement: placement.initialize(self, game_board_reference)
+	
+	# Client-only subsystem
+	if selection: 
+		selection.initialize(self, game_board_reference)
 
 	# Initialize board state
-	board_state.movement_map = {}
+	if board_state:
+		board_state.movement_map = {}
 
 # Update dragged card position to follow the mouse cursor
 
@@ -94,6 +110,7 @@ func reset_all_slot_overlays() -> void:
 
 # Begin dragging a card if it's in a state that allows dragging
 func start_drag(card: Node2D) -> void:
+	print("start_drag")
 	if card.state_machine.can_drag() and not card.state_machine.get_current_state() == card.state_machine.State.MULLIGAN:
 		selection.deselect_all_cards()
 		print("CardManager: Starting drag for ", card.name)
@@ -104,7 +121,7 @@ func start_drag(card: Node2D) -> void:
 			print("  ERROR: player_hand_reference does not have remove_card_from_hand")
 		card_being_dragged = card
 		# Update card state
-		card.state_machine.transition_to(card.state_machine.State.DRAGGING, GameConstants.TriggerSource.PLAYER_CHOICE)
+		card.state_machine.transition_to(card.state_machine.State.DRAGGING, {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 		
 		# Reset all visual overlays before showing new ones
 		reset_all_slot_overlays()
@@ -122,7 +139,7 @@ func start_drag(card: Node2D) -> void:
 	#    player_hand_reference.remove_card_from_hand(card)
 		
 	card_being_dragged = card
-	card.state_machine.transition_to(card.state_machine.State.DRAGGING,GameConstants.TriggerSource.PLAYER_CHOICE)
+	card.state_machine.transition_to(card.state_machine.State.DRAGGING,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	
 	reset_all_slot_overlays()
 	var placement_validator = get_node("PlacementValidator") # Assuming it's a child
@@ -135,6 +152,16 @@ func _perform_raycast(collision_mask: int) -> Array: # Returns Array[Dictionary]
 	parameters.collide_with_areas = true
 	parameters.collision_mask = collision_mask
 	return space_state.intersect_point(parameters)
+
+func show_placement_highlights(card: BaseCard):
+	# Get the game state from the client's controller
+	var client_controller = get_parent().get_node("Game")
+	var current_player_id = client_controller.current_player_id
+	var p1_emp = client_controller.p1_emperor_slot
+	var p2_emp = client_controller.p2_emperor_slot
+
+	# Call the visual function with the required data
+	placement.display_valid_placements(card, current_player_id, p1_emp, p2_emp)
 
 # Gets the topmost Card node from a list of raycast results
 func _get_topmost_card_from_results(raycast_results: Array) -> Card: # Returns Card or null
@@ -169,7 +196,7 @@ func raycast_check_for_card_slot() -> Node2D: # Stays Node2D as CardSlot might n
 	return null
 
 # raycasting to check for a card at the mouse position
-func raycast_check_for_card() -> Card: # Returns Card or null
+func raycast_check_for_card() -> BaseCard: # Returns Card or null
 	var results: Array = _perform_raycast(GameConstants.COLLISION_MASK_CARD) # Use your constant
 	# No need for 'if results.size() > 0:' here, _get_topmost_card_from_results handles empty actual_cards
 	return _get_topmost_card_from_results(results)

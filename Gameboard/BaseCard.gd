@@ -351,4 +351,4 @@ func _reset_action_visuals() -> void:
 func setup_for_mulligan_display() -> void:
 	if state_machine and state_machine.get_current_state() != state_machine.State.MULLIGAN:
 		# print("BaseCard '", name, "': Transitioning to MULLIGAN state via setup_for_mulligan_display.")
-		state_machine.transition_to(state_machine.State.MULLIGAN, GameConstants.TriggerSource.PLAYER_CHOICE)
+		state_machine.transition_to(state_machine.State.MULLIGAN, {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})

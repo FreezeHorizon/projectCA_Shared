@@ -133,7 +133,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			return to_state == State.IN_HAND  # Only allow transition to IN_HAND when mulligan is over
 		State.IN_HAND:
 			# When in hand, don't allow hovering if in mulligan phase or if a card is being dragged
-			if card_manager_reference and card_manager_reference.get_parent().get_node_or_null("MulliganManager").mull_phase:
+			if card_manager_reference and get_node_or_null("../../../GameBoard/MulliganManager").mull_phase:
 				return to_state == State.MULLIGAN
 			# Check if any card is being dragged
 			if to_state == State.HOVERING and card_manager_reference and card_manager_reference.card_being_dragged:
@@ -144,7 +144,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 					to_state == State.MULLIGAN
 		State.HOVERING:
 			# Check for mulligan phase when trying to exit hover state
-			if card_manager_reference and card_manager_reference.get_parent().get_node_or_null("MulliganManager").mull_phase:
+			if card_manager_reference and get_node_or_null("../../../GameBoard/MulliganManager").mull_phase:
 				return to_state == State.IN_HAND  # Only allow returning to hand during mulligan
 			return to_state == State.IN_HAND or to_state == State.DRAGGING
 		State.DRAGGING:
@@ -186,7 +186,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 func _exit_state(state: State) -> void:
 	match state:
 		State.HOVERING:
-			print("HOVER OFF")
+			#print("HOVER OFF")
 			_reset_hover_state()
 		State.DRAGGING:
 			print("FINISH DRAG")
@@ -201,18 +201,18 @@ func _enter_state(state: State) -> void:
 	card.z_index = state_config[state]["z_index"]
 	match state:
 		State.MULLIGAN:
-			print("CardStateMachine: ", card.name, " entering MULLIGAN. Target scale: ", state_config[State.MULLIGAN]["scale"])
+			#print("CardStateMachine: ", card.name, " entering MULLIGAN. Target scale: ", state_config[State.MULLIGAN]["scale"])
 			card.scale = state_config[State.MULLIGAN]["scale"] 
 			card.z_index = state_config[State.MULLIGAN]["z_index"]
 		State.IN_HAND:
-			print("CardStateMachine: ", card.name, " entering IN_HAND. Current scale: ", card.scale, " Target scale from config: ", state_config[State.IN_HAND]["scale"])
+			#print("CardStateMachine: ", card.name, " entering IN_HAND. Current scale: ", card.scale, " Target scale from config: ", state_config[State.IN_HAND]["scale"])
 			card.scale = state_config[State.IN_HAND]["scale"]
 			card.z_index = state_config[State.IN_HAND]["z_index"]
 			var area_2d_shape = card.get_node_or_null("Area2D/CollisionShape2D")
 			if is_instance_valid(area_2d_shape):
 				area_2d_shape.disabled = false
 		State.DRAGGING:
-			print("Dragging")
+			#print("Dragging")
 			_start_drag()
 		State.ON_BOARD_ENTER:
 			print("CardState: ",card.name, " On_board_enter")
@@ -224,7 +224,7 @@ func _enter_state(state: State) -> void:
 			print("CardState: ",card.name, " Selected")
 			_select_on_board()
 		State.HOVERING:
-			print("Hovering")
+			#print("Hovering")
 			_start_hover()
 		State.MOVING:
 			print("CardState: ",card.name, " Moving")
@@ -273,7 +273,7 @@ func _place_on_board() -> void:
 		
 		# Enable collision after animation
 		call_deferred("_enable_board_collision")
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.ENTER,trigger_source)
 
 func _enable_board_collision() -> void:
@@ -323,7 +323,7 @@ func _start_moving() -> void:
 	if not _is_server():
 		card.scale = state_config[State.MOVING]["scale"]
 		card.z_index = state_config[State.MOVING]["z_index"]
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.MOVE, trigger_source)
 
 func _start_attacking() -> void:
@@ -335,7 +335,7 @@ func _start_attacking() -> void:
 		if selected: selected.stop() # Use get_node_or_null to be safe
 	
 	# Logic
-	var trigger_source = event_context.get("trigger_source", GameConstants.TriggerSource.PLAYER_CHOICE)
+	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	card.use_action(card.ActionType.ATTACK, trigger_source)
 
 func _take_damage() -> void:
