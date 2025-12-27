@@ -25,15 +25,9 @@ func is_valid_card_placement(slot: Node, card: BaseCard, current_player_id: int,
 	if card_data["type"] == GameConstants.CardType.EMPEROR:
 		return active_emperor_slot == null
 	
-	# Rule 1: Place within range of emperor
-	if active_emperor_slot != null:
-		var distance = calculate_manhattan_distance(slot, active_emperor_slot)
-		if distance <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
-			return true
-	
 	# Rule 1: Cards can be placed within range of emperor
-	if card_manager.emperor_position != null:
-		var distance_to_emperor = calculate_manhattan_distance(slot, card_manager.emperor_position[%BattleManager.current_player_id-1])
+	if active_emperor_slot != null: # active_emperor_slot is already resolved based on player ID
+		var distance_to_emperor = calculate_manhattan_distance(slot, active_emperor_slot)
 		if distance_to_emperor <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
 			return true
 	
@@ -98,7 +92,7 @@ func get_adjacent_slots(slot: Node2D) -> Array:
 	var adjacents = []
 	var slot_pos = get_slot_grid_position(slot)
 	# The four cardinal directions
-	var directions = [Vector2(0, 1), Vector2(0, -1), Vector2(1, 0), Vector2(-1, 0)]
+	var directions = [Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 0), Vector2i(-1, 0)]
 
 	for dir in directions:
 		var new_pos = slot_pos + dir

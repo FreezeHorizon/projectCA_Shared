@@ -234,7 +234,10 @@ func reset_action() -> void:
 
 	if card_is_in_slot and state_machine and is_instance_valid(state_machine):
 		if state_machine.get_current_state() != state_machine.State.ON_BOARD_IDLE:
-			state_machine.transition_to(state_machine.State.ON_BOARD_IDLE, GameConstants.TriggerSource.GAME_RULE)
+			state_machine.transition_to(
+				state_machine.State.ON_BOARD_IDLE, 
+				{ "trigger_source": GameConstants.TriggerSource.GAME_RULE }
+			)
 
 
 func can_perform_action(action_to_check: ActionType) -> bool:

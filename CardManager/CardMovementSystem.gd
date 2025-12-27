@@ -129,23 +129,57 @@ func perform_direct_swap(card1: Node2D, card2: Node2D, slot1: Node2D, slot2: Nod
 	card2.state_machine.transition_to(card2.state_machine.State.ON_BOARD_IDLE)
 
 func place_card_in_slot(card: Node2D, slot: Node2D) -> void:
-	# Remove card from the player's hand
-	player_hand_reference[battle_manager.current_player_id-1].remove_card_from_hand(card)
+	# 1. Update Hierarchy
+	if card.get_parent() != card_manager:
+		card.get_parent().remove_child(card)
+		card_manager.add_child(card)
 	
-	# Set the card's position to match the slot
-	card.position = slot.position
+	# 2. Update Position & TRANSFORM (The Fix)
+	card.global_position = slot.global_position
+	
+	# CRITICAL: Reset rotation and scale. 
+	# Even if the animation library is different, this forces a clean slate.
+	card.rotation = 0.0 
+	card.scale = Vector2(0.5, 0.5) 
+	
+	# 3. Data Links
+	card.set_meta("original_y", card.position.y)
 	card.card_is_in_slot = slot
-	# Change card state to indicate it's now on the board
-	card.state_machine.transition_to(card.state_machine.State.ON_BOARD_ENTER,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	
-	# Store original Y position for animations like highlighting
-	card.set_meta("original_y", slot.position.y)
-	
-	# Update slot state to show it's now occupied
-	slot.is_occupied = true
-	slot.card_in_slot = card
+	# Snare vs Unit Logic
+	var is_snare = false
+	if card.has_method("get_current_card_data_dict"):
+		var d = card.get_current_card_data_dict()
+		if d.get("type") == 2 and d.get("subtype") == "Snare": 
+			is_snare = true
+
+	if is_snare:
+		slot.snare_in_slot = card
+	else:
+		slot.is_occupied = true
+		slot.card_in_slot = card
+
+	# Emperor Logic
+	if card.has_method("get_current_card_data_dict"):
+		var data = card.get_current_card_data_dict()
+		if data.get("type") == 0: 
+			var index = 0 if card.is_player_card else 1
+			card_manager.emperor_position[index] = slot
+
+	# 4. Play Animation
+	if card.has_node("AnimationPlayer"):
+		var anim = card.get_node("AnimationPlayer")
+		anim.stop() # Kill any running hand animations immediately
+		
+		# Play the card's OWN version of this animation
+		if anim.has_animation("CardAnimations/place_on_board"):
+			anim.play("CardAnimations/place_on_board")
+		else:
+			# Fallback if EnemyCard is missing this specific animation
+			print("CMSys: 'place_on_board' animation missing on ", card.name)
+
+	# 5. Visuals
 	card._update_visual_state() 
-	print("CMSys: Called _update_visual_state for ", card.name, " after placing in slot. is_face_down: ", card.is_face_down)
 	card_manager.board_state.update_movement_maps_for_obstacle_change(slot)
 
 func reset_all_card_actions() -> void:

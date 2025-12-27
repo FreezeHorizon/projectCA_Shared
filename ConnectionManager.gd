@@ -182,7 +182,7 @@ func disconnect_from_game():
 @rpc("authority", "call_remote", "reliable")
 func assign_player_number(p_num: int):
 	my_player_number = p_num
-	print("ConnectionManager: I have been assigned Player Number: ", my_player_number)
+	print("!!! IDENTITY ASSIGNED: I am Player ", my_player_number, " (My PeerID: ", multiplayer.get_unique_id(), ")")
 	emit_signal("player_identity_assigned", my_player_number)
 
 # --- MultiplayerAPI Signal Handlers ---
@@ -241,20 +241,23 @@ func server_receive_player_info(p_name: String):
 	if not multiplayer.is_server(): return
 	var sender_id = multiplayer.get_remote_sender_id()
 	
-	print("ConnectionManager (Server): Received player info from ID ", sender_id, ": ", p_name)
-	if players.has(sender_id):
-		players[sender_id].name = p_name
-	else: 
+	# Force add if missing (Safety check)
+	if not players.has(sender_id):
 		players[sender_id] = {"name": p_name, "is_ready": false}
+	else:
+		players[sender_id].name = p_name
 	
-	# --- THIS IS THE FIX ---
-	# Immediately tell the client who they are.
+	# Try to assign number
 	var player_num = get_player_num_for_peer_id(sender_id)
+	
+	# DEBUG
+	print("Server: Assigning identity for Peer ", sender_id, " -> Player ", player_num)
+	
 	if player_num != -1:
 		assign_player_number.rpc_id(sender_id, player_num)
-	# -----------------------
+	else:
+		printerr("Server: FAILED to assign player number for ", sender_id)
 
-	# Broadcast updated player list to everyone
 	rpc("client_receive_initial_lobby_state", players)
 
 @rpc("reliable") # Called by server on all clients

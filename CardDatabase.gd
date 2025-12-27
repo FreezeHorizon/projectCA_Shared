@@ -2,7 +2,6 @@ extends Node
 
 const atlas_path = {
 	ARTIFACT ="res://Assets/CardAtlas/ArtifactAtlas.tres",
-	LP = "res://Assets/CardAtlas/LostParadiseUnitAtlas.tres",
 	NEUTRAL_1 ="res://Assets/CardAtlas/Neutral1UnitAtlas.tres",
 	NEUTRAL_2 = "res://Assets/CardAtlas/Neutral2UnitAtlas2.tres",
 	ONMYODO_1 = "res://Assets/CardAtlas/OnmyodoUnitAtlas1.tres",
@@ -14,6 +13,7 @@ const atlas_path = {
 	SPELL_2 = "res://Assets/CardAtlas/SpellAtlas2.tres",
 	SPELL_3 = "res://Assets/CardAtlas/SpellAtlas3.tres",
 	VEDA = "res://Assets/CardAtlas/VedaUnitAtlas.tres",
+	LP = "res://Assets/CardAtlas/LostParadiseUnitAtlas.tres",
 }
 
 const CARDS = { #Attack,Health,#ApCost,#Type #AtlasRegion #Faction
@@ -106,6 +106,17 @@ const CARDS = { #Attack,Health,#ApCost,#Type #AtlasRegion #Faction
 		"faction": GameConstants.Faction.NEUTRAL, 
 		"moveRange": 1,
 		"attackRange": 1
+	},
+	"BeliefCrystal": {
+		"attack": 0,
+		"health": 0,
+		"apCost": 0,
+		"type": GameConstants.CardType.SPELL, 
+		"atlasRegion": [2, 764, 207, 252],
+		"atlasPath": atlas_path.SPELL_3,
+		"faction": GameConstants.Faction.NEUTRAL, 
+		"moveRange": 0,
+		"attackRange": 0
 	}
 }
 

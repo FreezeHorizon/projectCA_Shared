@@ -15,6 +15,16 @@ enum CardType {
 	SPELL = 4 
 }
 
+enum PlacementReply {
+	SUCCESS = 0,
+	NOT_ENOUGH_AP = 1,
+	SLOT_OCCUPIED = 2,
+	INVALID_POSITION = 3, # Range issues
+	NOT_YOUR_TURN = 4,
+	CARD_NOT_FOUND = 5,
+	EMPEROR_MISSING = 6
+}
+
 enum TriggerSource {
 	PLAYER_CHOICE,    # An active choice by the card's owner (e.g., double-click)
 	EFFECT_ALLY,      # Caused by an effect from an allied card/spell

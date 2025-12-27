@@ -6,6 +6,7 @@ var slot_name: StringName
 
 var is_occupied: bool = false
 var card_in_slot: BaseCard = null
+var snare_in_slot: BaseCard = null
 var grid_position: Vector2i 
 
 func _init(name: StringName, pos: Vector2i):

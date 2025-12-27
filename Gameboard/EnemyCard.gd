@@ -6,8 +6,9 @@ class_name EnemyCard extends BaseCard # Inherits from BaseCard
 func _ready() -> void:
 	super._ready() # CORRECTED
 	set_owner_is_player(false)
-	if scale == Vector2.ONE:
-		scale = Vector2(0.5, 0.5) 
+	self.scale = Vector2(0.5, 0.5)
+	if scale == Vector2.ONE: 
+		scale = Vector2(0.5, 0.5)
 	add_to_group("EnemyCards")
 
 #-----------------------------------------------------------------------------
@@ -92,7 +93,7 @@ func _update_visual_state() -> void:
 	
 	if not is_instance_valid(card_is_in_slot): # Enemy Card is IN HAND
 		print("	 EnemyCard.gd: In hand. Forcing card back visible.")
-		card_image_node.visible = true # Hide face
+		card_image_node.visible = false # Hide face
 		card_back_image_node.visible = true # Show back
 		if is_instance_valid(ap_cost_node): ap_cost_node.visible = false
 		if is_instance_valid(type_image_node): type_image_node.visible = false

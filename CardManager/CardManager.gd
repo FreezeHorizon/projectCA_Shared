@@ -9,7 +9,7 @@ var is_hovering_on_card:bool
 var player_hand_reference:Node2D
 var game_board_reference:Node2D
 var emperor_position: Array[Node] = [null, null]
-
+var client_event_handler: Node
 # References to subsystems
 var movement: Node
 var board_state: Node
@@ -17,6 +17,7 @@ var placement: Node
 var selection: Node
 var mulligan_manager: Control
 var input_manager 
+
 # Initialize components
 func _ready() -> void:
 	# These are direct children of CardManager, so no path prefix needed
@@ -34,13 +35,19 @@ func _ready() -> void:
 		selection = test_node
 		# 2. GameBoard is a SIBLING of CardManager
 		game_board_reference = get_node_or_null("../GameBoard")
-		
+		client_event_handler = get_node("..")
 		# 3. These are CHILDREN OF GAMEBOARD (Sibling -> Child)
+		if not client_event_handler:
+			printerr("CardManager: Could not find Client_EventHandler (Parent)!")
+		else:
+			print("CardManager: Found Client_EventHandler: ", client_event_handler.name)
 		if game_board_reference:
 			mulligan_manager = game_board_reference.get_node_or_null("MulliganManager")
 			player_hand_reference = game_board_reference.get_node_or_null("PlayerHand")
 			input_manager = game_board_reference.get_node_or_null("InputManager")
-		
+		if not client_event_handler:
+			printerr("Client CardManager: Could not find ClientEventHandler!")
+
 		# 4. Connect Signals (Only if input_manager was found)
 		if input_manager:
 			input_manager.connect("left_mouse_button_released", Callable(self, "on_left_click_released"))
@@ -110,40 +117,37 @@ func reset_all_slot_overlays() -> void:
 
 # Begin dragging a card if it's in a state that allows dragging
 func start_drag(card: Node2D) -> void:
-	print("start_drag")
+	if OS.has_feature("server"): return # Safety guard
+
+	# Check if card can be dragged
 	if card.state_machine.can_drag() and not card.state_machine.get_current_state() == card.state_machine.State.MULLIGAN:
 		selection.deselect_all_cards()
 		print("CardManager: Starting drag for ", card.name)
-		if player_hand_reference.has_method("remove_card_from_hand"): # Check method exists
+
+		# Visual Hand Logic
+		if player_hand_reference and player_hand_reference.has_method("remove_card_from_hand"):
 			player_hand_reference.remove_card_from_hand(card)
-			print("  Called remove_card_from_hand. Is ", card.name, " still in player_hand_cards? ", card in player_hand_reference.player_hand_cards)
 		else:
-			print("  ERROR: player_hand_reference does not have remove_card_from_hand")
+			print("  ERROR: player_hand_reference missing or invalid")
+
+		# State Logic
 		card_being_dragged = card
-		# Update card state
 		card.state_machine.transition_to(card.state_machine.State.DRAGGING, {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 		
-		# Reset all visual overlays before showing new ones
+		# Visual Overlays
 		reset_all_slot_overlays()
 		
-		# Show valid placement locations for this specific card
-		placement.display_valid_placements(card)
-
-	# selection.deselect_all_cards() # BattleManager handles this when drag is initiated if needed
-
-	print("CardManager: Starting visual drag for ", card.name)
-	
-	# PlayerHand should have already removed it logically when BattleManager got card_drag_initiated
-	# If not, this is a fallback, but ideally BattleManager ensures PlayerHand list is up-to-date.
-	# if player_hand_reference.has_method("remove_card_from_hand") and card in player_hand_reference.player_hand_cards:
-	#    player_hand_reference.remove_card_from_hand(card)
-		
-	card_being_dragged = card
-	card.state_machine.transition_to(card.state_machine.State.DRAGGING,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
-	
-	reset_all_slot_overlays()
-	var placement_validator = get_node("PlacementValidator") # Assuming it's a child
-	placement_validator.display_valid_placements(card)
+		# Get Game State for Validation
+		if client_event_handler:
+			var my_id = ConnectionManager.my_player_number
+			var my_emp = emperor_position[0]
+			var enemy_emp = emperor_position[1]
+			var p1_arg = my_emp if my_id == 1 else enemy_emp
+			var p2_arg = my_emp if my_id == 2 else enemy_emp
+			# Show Valid Placements (Correct 4-argument call)
+			placement.display_valid_placements(card, my_id, p1_arg, p2_arg)
+		else:
+			printerr("CardManager: Cannot display placements - ClientEventHandler is missing!")
 
 func _perform_raycast(collision_mask: int) -> Array: # Returns Array[Dictionary]
 	var space_state: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
@@ -152,16 +156,6 @@ func _perform_raycast(collision_mask: int) -> Array: # Returns Array[Dictionary]
 	parameters.collide_with_areas = true
 	parameters.collision_mask = collision_mask
 	return space_state.intersect_point(parameters)
-
-func show_placement_highlights(card: BaseCard):
-	# Get the game state from the client's controller
-	var client_controller = get_parent().get_node("Game")
-	var current_player_id = client_controller.current_player_id
-	var p1_emp = client_controller.p1_emperor_slot
-	var p2_emp = client_controller.p2_emperor_slot
-
-	# Call the visual function with the required data
-	placement.display_valid_placements(card, current_player_id, p1_emp, p2_emp)
 
 # Gets the topmost Card node from a list of raycast results
 func _get_topmost_card_from_results(raycast_results: Array) -> Card: # Returns Card or null
