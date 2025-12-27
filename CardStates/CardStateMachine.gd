@@ -133,8 +133,10 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			return to_state == State.IN_HAND  # Only allow transition to IN_HAND when mulligan is over
 		State.IN_HAND:
 			# When in hand, don't allow hovering if in mulligan phase or if a card is being dragged
-			if card_manager_reference and get_node_or_null("../../../GameBoard/MulliganManager").mull_phase:
-				return to_state == State.MULLIGAN
+			if not OS.has_feature("server"):
+				var mulligan_manager = card_manager_reference.get_parent().get_node_or_null("GameBoard/MulliganManager")
+				if mulligan_manager and mulligan_manager.mull_phase:
+					return to_state == State.MULLIGAN
 			# Check if any card is being dragged
 			if to_state == State.HOVERING and card_manager_reference and card_manager_reference.card_being_dragged:
 				return false
@@ -146,9 +148,14 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			# Check for mulligan phase when trying to exit hover state
 			if card_manager_reference and get_node_or_null("../../../GameBoard/MulliganManager").mull_phase:
 				return to_state == State.IN_HAND  # Only allow returning to hand during mulligan
-			return to_state == State.IN_HAND or to_state == State.DRAGGING
+			return to_state == State.IN_HAND or \
+				   to_state == State.DRAGGING or \
+				   to_state == State.ON_BOARD_ENTER or \
+				   to_state == State.ON_BOARD_IDLE
 		State.DRAGGING:
-			return to_state == State.IN_HAND or to_state == State.ON_BOARD_ENTER
+			return to_state == State.IN_HAND or \
+				   to_state == State.ON_BOARD_ENTER or \
+				   to_state == State.ON_BOARD_IDLE
 		State.ON_BOARD_ENTER:
 			return to_state == State.ON_BOARD_IDLE or \
 					to_state == State.RETALIATE

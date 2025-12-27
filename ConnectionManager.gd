@@ -15,6 +15,7 @@ signal load_game_scene
 signal all_clients_loaded_game_scene
 signal player_identity_assigned(player_num: int)
 
+var next_available_p_num = 1
 var players_loaded_count: int = 0
 var is_dedicated_server: bool = false
 var game_has_started: bool = false
@@ -88,26 +89,24 @@ func get_peer_id_for_player(player_num: int) -> int:
 	return -1 # Not found
 
 func get_player_num_for_peer_id(peer_id: int) -> int:
-	var sorted_ids = players.keys()
-	sorted_ids.sort()
-	
-	if is_dedicated_server:
-		if sorted_ids.size() > 0 and sorted_ids[0] == peer_id: return 1
-		if sorted_ids.size() > 1 and sorted_ids[1] == peer_id: return 2
-	else:
-		# Listen server: Host (1) is always P1
-		if peer_id == 1: return 1 # Host is P1
-		# The first client ID in the list is P2
-		if sorted_ids.size() > 1 and sorted_ids[1] == peer_id: return 2
+	if players.has(peer_id):
+		# If the dictionary has the number, return it
+		if players[peer_id].has("player_num"):
+			return players[peer_id].player_num
+			
+	# Fallback for Listen Server Host (ID 1) if not in dict
+	if not is_dedicated_server and peer_id == 1:
+		return 1
 		
-	return -1 # Not found
+	return -1
 
 
 # --- Hosting ---
 func host_game(port: int = DEFAULT_PORT) -> bool:
 	print("ConnectionManager: Attempting to host game on port ", port)
 	current_port = port
-	
+	players.clear()
+	next_available_p_num = 1
 	# Ensure any previous peer is closed and cleared
 	if is_instance_valid(multiplayer.multiplayer_peer):
 		multiplayer.multiplayer_peer.close()
@@ -182,7 +181,7 @@ func disconnect_from_game():
 @rpc("authority", "call_remote", "reliable")
 func assign_player_number(p_num: int):
 	my_player_number = p_num
-	print("ConnectionManager: I have been assigned Player Number: ", my_player_number)
+	print("!!! IDENTITY ASSIGNED: I am Player ", my_player_number, " (My PeerID: ", multiplayer.get_unique_id(), ")")
 	emit_signal("player_identity_assigned", my_player_number)
 
 # --- MultiplayerAPI Signal Handlers ---
@@ -191,14 +190,25 @@ func _on_mp_api_peer_connected(id: int):
 	if multiplayer.is_server():
 		if is_dedicated_server and id == 1: return
 		
-		players[id] = {"name": "Player_" + str(id), "is_ready": false}
-		assign_player_number.rpc_id(id, get_player_num_for_peer_id(id))
-		emit_signal("peer_connected_to_server", id, players[id].name)
+		# --- CHANGED BLOCK START ---
+		var p_num = next_available_p_num
+		next_available_p_num += 1
 		
+		# Store player_num in the dictionary
+		players[id] = {
+			"name": "Player_" + str(id), 
+			"is_ready": false,
+			"player_num": p_num 
+		}
+		
+		assign_player_number.rpc_id(id, p_num)
+		# --- CHANGED BLOCK END ---
+		
+		emit_signal("peer_connected_to_server", id, players[id].name)
 		rpc("client_receive_initial_lobby_state", players) 
 		
-		# Also update host's own local client view
-		print("Server (peer_connected): local client update with initial lobby state.")
+		# Host local update
+		print("Server (peer_connected): local client update.")
 		client_receive_initial_lobby_state(players) 
 
 		_check_and_emit_all_players_ready()
@@ -241,20 +251,16 @@ func server_receive_player_info(p_name: String):
 	if not multiplayer.is_server(): return
 	var sender_id = multiplayer.get_remote_sender_id()
 	
-	print("ConnectionManager (Server): Received player info from ID ", sender_id, ": ", p_name)
 	if players.has(sender_id):
 		players[sender_id].name = p_name
-	else: 
-		players[sender_id] = {"name": p_name, "is_ready": false}
-	
-	# --- THIS IS THE FIX ---
-	# Immediately tell the client who they are.
-	var player_num = get_player_num_for_peer_id(sender_id)
-	if player_num != -1:
-		assign_player_number.rpc_id(sender_id, player_num)
-	# -----------------------
+	else:
+		# Edge case: Info arrived before connection signal processed? Unlikely reliable.
+		# But if we must create it:
+		var p_num = next_available_p_num
+		next_available_p_num += 1
+		players[sender_id] = {"name": p_name, "is_ready": false, "player_num": p_num}
+		assign_player_number.rpc_id(sender_id, p_num)
 
-	# Broadcast updated player list to everyone
 	rpc("client_receive_initial_lobby_state", players)
 
 @rpc("reliable") # Called by server on all clients

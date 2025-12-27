@@ -4,37 +4,40 @@ extends Node
 @onready var board_state_manager = $"../CardManager/BoardStateManager"
 @onready var battle_manager = get_node("/root/Server/BattleManager")
 
-func validate_play_card(player: Player, card: BaseCard, target_slot: Node) -> bool:
+func validate_play_card(player: Player, card: BaseCard, target_slot: Node) -> int:
+
 	# 1. Check if target_slot exists
-	if not target_slot:
+	if not target_slot: 
 		print("Validation Failed: No target slot.")
-		return false
+		return GameConstants.PlacementReply.INVALID_POSITION
 
 	# 2. Check Emperor Requirement
 	if not card.is_emperor_card and not player.emperor_on_board:
 		print("Validation Failed: Emperor not on board.")
-		return false
+		return GameConstants.PlacementReply.EMPEROR_MISSING
 		
 	# 3. Check AP Cost
 	if player.current_ap < card.current_cost:
 		print("Validation Failed: Not enough AP.")
-		return false
+		return GameConstants.PlacementReply.NOT_ENOUGH_AP
 
 	# 4. Check if slot is occupied
 	if target_slot.is_occupied:
 		print("Validation Failed: Slot occupied.")
-		return false
+		return GameConstants.PlacementReply.SLOT_OCCUPIED
 	
 	var p1_emp = battle_manager.card_manager.emperor_position[0]
 	var p2_emp = battle_manager.card_manager.emperor_position[1]
-
+	
+	print("ActionValidator DEBUG: Checking P", player.player_id, " Card: ", card.name)
+	print("  State: P1_Emp=", p1_emp, " P2_Emp=", p2_emp)
 	# 5. Check Placement Rules (Range, etc.)
 	if not placement_validator.is_valid_card_placement(target_slot, card, player.player_id, p1_emp, p2_emp):
 		print("Validation Failed: Invalid placement position.")
-		return false
+		return GameConstants.PlacementReply.INVALID_POSITION
 
 	# If we passed all checks:
-	return true
+	return GameConstants.PlacementReply.SUCCESS
 
 func validate_flip(player: Player, card: BaseCard) -> bool:
 	# 1. Check Ownership

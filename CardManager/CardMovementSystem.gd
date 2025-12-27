@@ -129,23 +129,53 @@ func perform_direct_swap(card1: Node2D, card2: Node2D, slot1: Node2D, slot2: Nod
 	card2.state_machine.transition_to(card2.state_machine.State.ON_BOARD_IDLE)
 
 func place_card_in_slot(card: Node2D, slot: Node2D) -> void:
-	# Remove card from the player's hand
-	player_hand_reference[battle_manager.current_player_id-1].remove_card_from_hand(card)
+	# 1. Update Hierarchy
+	if card.get_parent() != card_manager:
+		card.get_parent().remove_child(card)
+		card_manager.add_child(card)
+	card.rotation = 0.0
+	# 2. Update Position
+	card.global_position = slot.global_position
+	card.set_meta("original_y", card.position.y)
 	
-	# Set the card's position to match the slot
-	card.position = slot.position
+	# 3. Data Links & Occupancy Logic
 	card.card_is_in_slot = slot
-	# Change card state to indicate it's now on the board
-	card.state_machine.transition_to(card.state_machine.State.ON_BOARD_ENTER,{"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
 	
-	# Store original Y position for animations like highlighting
-	card.set_meta("original_y", slot.position.y)
-	
-	# Update slot state to show it's now occupied
-	slot.is_occupied = true
-	slot.card_in_slot = card
+	# --- NEW: CHECK FOR SNARE VS UNIT ---
+	var is_snare = false
+	if card.has_method("get_current_card_data_dict"):
+		var d = card.get_current_card_data_dict()
+		# Assuming type 2 is PLOY and you have a subtype check or similar
+		if d.get("type") == 2 and d.get("subtype") == "Snare": 
+			is_snare = true
+
+	if is_snare:
+		# Snare Logic: Does NOT block movement
+		slot.snare_in_slot = card
+		# Do NOT set slot.is_occupied = true
+		print("CMSys: Placed Snare '", card.name, "' in ", slot.name)
+	else:
+		# Unit Logic: Blocks movement
+		slot.is_occupied = true
+		slot.card_in_slot = card
+	# ------------------------------------
+	if card.has_node("AnimationPlayer"):
+		var anim = card.get_node("AnimationPlayer")
+		anim.stop()
+		anim.play("CardAnimations/place_on_board")
+		# Wait for the signal on the AnimationPlayer node
+		await anim.animation_finished
+		
+	# 4. Emperor Logic
+	if card.has_method("get_current_card_data_dict"):
+		var data = card.get_current_card_data_dict()
+		if data.get("type") == 0: 
+			var index = 0 if card.is_player_card else 1
+			card_manager.emperor_position[index] = slot
+			print("CMSys: Updated Emperor Position for index ", index, " to ", slot.name)
+
+	# 5. Visuals & State
 	card._update_visual_state() 
-	print("CMSys: Called _update_visual_state for ", card.name, " after placing in slot. is_face_down: ", card.is_face_down)
 	card_manager.board_state.update_movement_maps_for_obstacle_change(slot)
 
 func reset_all_card_actions() -> void:
