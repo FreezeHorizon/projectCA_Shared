@@ -139,15 +139,13 @@ func start_drag(card: Node2D) -> void:
 		
 		# Get Game State for Validation
 		if client_event_handler:
-			var my_emperor_slot = emperor_position[0]
-			# Show Valid Placements (Correct 4-argument call)
-			placement.display_valid_placements(card, my_emperor_slot)
 			var my_id = ConnectionManager.my_player_number
 			var my_emp = emperor_position[0]
 			var enemy_emp = emperor_position[1]
+			
 			var p1_arg = my_emp if my_id == 1 else enemy_emp
 			var p2_arg = my_emp if my_id == 2 else enemy_emp
-			# Show Valid Placements (Correct 4-argument call)
+			
 			placement.display_valid_placements(card, my_id, p1_arg, p2_arg)
 		else:
 			printerr("CardManager: Cannot display placements - ClientEventHandler is missing!")

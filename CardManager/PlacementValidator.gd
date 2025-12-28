@@ -31,12 +31,19 @@ func is_valid_card_placement(slot: Node, card: BaseCard, current_player_id: int,
 		if distance_to_emperor <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
 			return true
 	
+	
 	# Rule 2: Cards can be placed adjacent to allied hero cards
 	for neighbor_slot in get_adjacent_slots(slot):
 		if neighbor_slot.is_occupied and neighbor_slot.card_in_slot != null:
-			var neighbor_card_data = neighbor_slot.card_in_slot.get_current_card_data_dict()
-			if is_ally_card(neighbor_slot.card_in_slot, card) and neighbor_card_data["type"] == 1:	# Hero type
-				print("Found adjacent hero at: ", neighbor_slot.name) #debugging
+			var neighbor_card = neighbor_slot.card_in_slot
+			var neighbor_card_data = neighbor_card.get_current_card_data_dict()
+			
+			# If the neighbor is face down, it cannot extend range (it's a mystery)
+			if neighbor_card.is_face_down:
+				continue
+
+			if is_ally_card(neighbor_card, card) and neighbor_card_data["type"] == GameConstants.CardType.HERO:	
+				print("Found adjacent ACTIVE hero at: ", neighbor_slot.name)
 				return true
 	
 	# No valid placement conditions met

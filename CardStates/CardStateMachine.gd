@@ -89,14 +89,8 @@ func _ready():
 	# Ensure we have a reference to the card
 	card = get_parent()
 	# Get a reference to the CardManager using relative path
-	if is_instance_valid(card) and card.has_node("../../CardManager"): # Check if path is valid from current parent
-		card_manager_reference = card.get_node("../../CardManager")
-	else:
-		# Attempt to get it via a more global path if card might be elsewhere initially
-		# This assumes 'Main' is the root scene node containing 'CardManager'
-		var main_node = get_tree().root.get_node_or_null("Main")
-		if is_instance_valid(main_node) and main_node.has_node("CardManager"):
-			card_manager_reference = main_node.get_node("CardManager")
+	if is_instance_valid(card) and card.has_node("CardManager"): # Check if path is valid from current parent
+		card_manager_reference = card.get_node("CardManager")
 		# else:
 			# print("CardStateMachine on '", card.name, "': Could not reliably find CardManager.")
 
@@ -134,7 +128,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 		State.IN_HAND:
 			# When in hand, don't allow hovering if in mulligan phase or if a card is being dragged
 			if not OS.has_feature("server"):
-				var mulligan_manager = card_manager_reference.get_parent().get_node_or_null("GameBoard/MulliganManager")
+				var mulligan_manager = get_parent().get_node_or_null("../GameBoard/MulliganManager")
 				if mulligan_manager and mulligan_manager.mull_phase:
 					return to_state == State.MULLIGAN
 			# Check if any card is being dragged
@@ -143,7 +137,8 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			return to_state == State.HOVERING or \
 					to_state == State.DRAGGING or \
 					to_state == State.ON_BOARD_ENTER or \
-					to_state == State.MULLIGAN
+					to_state == State.MULLIGAN or \
+					to_state == State.ON_BOARD_IDLE
 		State.HOVERING:
 			# Check for mulligan phase when trying to exit hover state
 			if card_manager_reference and get_node_or_null("../../../GameBoard/MulliganManager").mull_phase:
