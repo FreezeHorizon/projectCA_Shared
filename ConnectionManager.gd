@@ -260,6 +260,22 @@ func server_receive_player_info(p_name: String):
 		next_available_p_num += 1
 		players[sender_id] = {"name": p_name, "is_ready": false, "player_num": p_num}
 		assign_player_number.rpc_id(sender_id, p_num)
+	# Force add if missing (Safety check)
+	if not players.has(sender_id):
+		players[sender_id] = {"name": p_name, "is_ready": false}
+	else:
+		players[sender_id].name = p_name
+	
+	# Try to assign number
+	var player_num = get_player_num_for_peer_id(sender_id)
+	
+	# DEBUG
+	print("Server: Assigning identity for Peer ", sender_id, " -> Player ", player_num)
+	
+	if player_num != -1:
+		assign_player_number.rpc_id(sender_id, player_num)
+	else:
+		printerr("Server: FAILED to assign player number for ", sender_id)
 
 	rpc("client_receive_initial_lobby_state", players)
 

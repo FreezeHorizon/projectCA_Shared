@@ -106,6 +106,17 @@ const CARDS = { #Attack,Health,#ApCost,#Type #AtlasRegion #Faction
 		"faction": GameConstants.Faction.NEUTRAL, 
 		"moveRange": 1,
 		"attackRange": 1
+	},
+	"BeliefCrystal": {
+		"attack": 0,
+		"health": 0,
+		"apCost": 0,
+		"type": GameConstants.CardType.SPELL, 
+		"atlasRegion": [2, 764, 207, 252],
+		"atlasPath": atlas_path.SPELL_3,
+		"faction": GameConstants.Faction.NEUTRAL, 
+		"moveRange": 0,
+		"attackRange": 0
 	}
 }
 

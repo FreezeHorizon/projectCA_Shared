@@ -144,7 +144,7 @@ func _update_visual_state() -> void:
 		# For face-up cards on board, AP cost and Type images are usually hidden by CardStateMachine's ON_BOARD_ENTER
 		# Ensure they are hidden here as well if that's the design.
 		if is_instance_valid(ap_cost_node): ap_cost_node.visible = false 
-		if is_instance_valid(type_image_node): type_image_node.visible = false
+		if is_instance_valid(type_image_node): type_image_node.visible = true
 
 	# print(name, ": Visual state updated. Is face down: ", is_face_down)
 
