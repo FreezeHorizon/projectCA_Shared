@@ -2,112 +2,100 @@ extends Node
 
 var card_manager: Node2D
 var game_board_reference: Node2D
+var selected_card: BaseCard = null
 
-# Initialize with references to key systems
 func initialize(manager: Node2D, board: Node2D) -> void:
 	card_manager = manager
 	game_board_reference = board
 
-# Handle when a card on the board is selected
-func select_card_on_board(card: Node2D) -> void:
-	print("Card selected: ", card.name)
-	# Clear any existing highlights
-	card_manager.reset_all_slot_overlays()
-	if card.has_move_action_available:
-		print("CardSelectionManager: Selecting card and showing move ranges for: ", card.name)
-	# Set the collision shape of the selected card's slot to full size
-	# this allows the player to toggle the selected card
-	if card.has_attack_action_available:
-		print("CardSelectionManager: Selecting card and showing attack ranges for: ", card.name)
-	if card.card_is_in_slot:
-		var collision_shape = card.card_is_in_slot.get_node("Area2D/CollisionShape2D")
+func select_card_on_board(card: BaseCard) -> void:
+
+	if selected_card == card:
+		print("CardSelectionManager: Clicked same card. Deselecting.")
+		deselect_all_cards()
+		return
+	
+	deselect_all_cards() # Clean up previous
+	
+	if not card.is_player_card: return # Can't select enemy for action
+	
+	if card.current_health <= 0 and card.base_health > 0:
+		print("CardSelectionManager: Ignoring click on dying unit.")
+		return
+	selected_card = card
+	var is_my_turn: bool = false
+	
+	# Visual State
+	print("CardSelectionManager: Selected ", card.name)
+	card.state_machine.transition_to(card.state_machine.State.SELECTED)
+	
+	# Slot Interaction (Click-through)
+	if is_instance_valid(card.card_is_in_slot):
+		var collision_shape = card.card_is_in_slot.get_node_or_null("Area2D/CollisionShape2D")
 		if collision_shape:
-			collision_shape.scale = card.card_is_in_slot.DEFAULT_SLOT_COLLISION_SCALING
-	# Show movement options for the selected card
-	show_movement_range(card)
+			collision_shape.scale = Vector2(1, 1) # Ensure clickable
+			
+	# Show Visuals
+	is_my_turn = ($"../..".current_player_id == ConnectionManager.my_player_number)
+	if is_my_turn:
+		# Show Options ONLY if it is my turn
+		_display_valid_actions(card)
+	else:
+		print("CardSelectionManager: Selected card, but not my turn. Hiding actions.")
+
+func deselect_all_cards() -> void:
+	if selected_card and is_instance_valid(selected_card):
+		selected_card.state_machine.transition_to(selected_card.state_machine.State.ON_BOARD_IDLE)
 	
-	# Show attack options for the selected card
-	show_attack_range(card)
+	selected_card = null
+	card_manager.reset_all_slot_overlays()
 
-# Check if any card is currently in the selected state
-func is_any_card_selected() -> bool:
-	for card in get_tree().get_nodes_in_group("AllCards"):
-		if card.state_machine.get_current_state() == card.state_machine.State.SELECTED:
-			return true
-	return false
+func get_selected_card() -> BaseCard:
+	if not is_instance_valid(selected_card):
+		selected_card = null # Auto-clean
+		return null
+	return selected_card
 
-# Get the currently selected card (if any)
-func get_selected_card() -> Node2D:
-	for card in get_tree().get_nodes_in_group("AllCards"):
-		if card.state_machine.get_current_state() == card.state_machine.State.SELECTED:
-			return card
+# --- NEW VISUAL LOGIC ---
+func _display_valid_actions(card: BaseCard) -> void:
+	var board_state = card_manager.board_state
+	var card_key = card.name
+	
+	# 1. Regenerate maps if missing (Safety)
+	if not board_state.movement_map.has(card_key):
+		board_state.precompute_unit_options(card)
+		
+	var valid_moves = board_state.movement_map.get(card_key, {})
+	var valid_attacks = board_state.attack_map.get(card_key, {})
+	
+	# 2. Display Attacks (Red)
+	for slot_name in valid_attacks:
+		var slot = _get_slot(slot_name)
+		if slot:
+			slot.update_highlight("attack", true)
+			
+	# 3. Display Moves (Blue)
+	# Logic: If I can Attack AND Move to the same tile?
+	# In your logic, Attack target must be enemy. Move target must be empty/ally.
+	# So they shouldn't overlap.
+	for slot_name in valid_moves:
+		var slot = _get_slot(slot_name)
+		if slot:
+			slot.update_highlight("move", true)
+
+func refresh_selection_overlays() -> void:
+	if not is_instance_valid(selected_card):
+		return
+	
+	print("CardSelectionManager: Refreshing overlays for ", selected_card.name)
+	# 1. Clear old
+	card_manager.reset_all_slot_overlays()
+	
+	# 2. Redraw new based on current maps
+	_display_valid_actions(selected_card)
+
+func _get_slot(slot_name: String) -> Node2D:
+	# Helper assuming game_board has get_slot_by_name
+	if game_board_reference.has_method("get_slot_by_name"):
+		return game_board_reference.get_slot_by_name(slot_name)
 	return null
-
-# Deselect all cards on the board
-func deselect_all_cards():
-	var deselection_occurred = false
-	for card_node_any in get_tree().get_nodes_in_group("AllCards"): # Iterate AllCards
-		if not card_node_any is BaseCard: continue
-		var card : BaseCard = card_node_any as BaseCard
-		
-		if card.state_machine.get_current_state() == card.state_machine.State.SELECTED:
-			card.state_machine.transition_to(card.state_machine.State.ON_BOARD_IDLE)
-			deselection_occurred = true
-	
-	if deselection_occurred:
-		card_manager.reset_all_slot_overlays() # Reset overlays when any deselection happens
-		print("CardSelectionManager: All cards deselected.")
-	return deselection_occurred
-
-# Highlight all valid movement options for a selected card
-func show_movement_range(card: Node2D) -> void:
-	# Skip if the card can't move right now (e.g., already moved this turn)
-	if not card.can_perform_action(card.ActionType.MOVE):
-		return
-		
-	var card_id = card.get_instance_id()
-	
-	# Generate movement map if it doesn't exist for this card
-	if not card_manager.board_state.movement_map.has(card_id):
-		card_manager.board_state.precompute_unit_movement(card)
-
-	if not card_manager.board_state.movement_map.has(card_id):
-		# Safety check - still no movement map (card might not be on a slot)
-		return
-		
-	# Highlight all slots within movement range
-	for slot in get_tree().get_nodes_in_group("CardSlots"):
-		if card_manager.board_state.movement_map[card_id].has(slot.name):
-			if not slot.is_occupied:
-				# Empty slot - can move here
-				slot.update_highlight("move")
-			elif card_manager.placement.is_ally_card(card, slot.card_in_slot) and \
-				slot.card_in_slot.can_perform_action(slot.card_in_slot.ActionType.MOVE) and \
-				card_manager.placement.is_adjacent(card.card_is_in_slot, slot): #the '\' extrends the if statement 
-				# Only highlight ally slots that are orthogonally adjacent (not diagonal)
-				slot.update_highlight("move")
-
-# Highlight all valid attack targets for a selected card
-func show_attack_range(card: Node2D) -> void:
-	print("CardSelectionManager: show_attack_range called for ", card.name) # Add this
-	print("  Card state: is_face_down=", card.is_face_down, ", has_attack_action_available=", card.has_attack_action_available) # Add this
-
-	if not card.can_perform_action(card.ActionType.ATTACK): # This calls the BaseCard method
-		print("  show_attack_range: Bailing because card.can_perform_action(ATTACK) is false.") # Add this
-		return
-		
-	var card_data = card.get_current_card_data_dict()
-	var card_slot = card.card_is_in_slot
-	var attack_range = card_data["current_attack_range"]
-	print("  Attack range: ", attack_range) # Add this
-	
-	var found_target_to_highlight = false # Add this
-	for slot in get_tree().get_nodes_in_group("CardSlots"):
-		if slot.is_occupied and card_manager.placement.is_enemy_card(card, slot.card_in_slot):
-			var distance = card_manager.placement.calculate_manhattan_distance(card_slot, slot)
-			if distance <= attack_range:
-				slot.update_highlight("attack")
-				found_target_to_highlight = true # Add this
-				print("    Highlighting ", slot.card_in_slot.name, " in slot ", slot.name, " for attack.") # Add this
-		if not found_target_to_highlight: # Add this
-			print("  show_attack_range: No valid enemy targets found in range.") # Add this

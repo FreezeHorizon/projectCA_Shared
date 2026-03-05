@@ -17,6 +17,7 @@ var placement: Node
 var selection: Node
 var mulligan_manager: Control
 var input_manager 
+var input_locked: bool = false
 
 # Initialize components
 func _ready() -> void:
@@ -117,8 +118,9 @@ func reset_all_slot_overlays() -> void:
 
 # Begin dragging a card if it's in a state that allows dragging
 func start_drag(card: Node2D) -> void:
+	if input_locked: return
 	if OS.has_feature("server"): return # Safety guard
-
+	if player_hand_reference.processing_paused == true: return
 	# Check if card can be dragged
 	if card.state_machine.can_drag() and not card.state_machine.get_current_state() == card.state_machine.State.MULLIGAN:
 		selection.deselect_all_cards()

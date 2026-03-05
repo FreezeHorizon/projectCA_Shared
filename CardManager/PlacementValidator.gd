@@ -14,6 +14,10 @@ func initialize(manager: Node2D, board: Node2D) -> void:
 
 # Check if a card can be legally placed at a given slot according to game rules
 func is_valid_card_placement(slot: Node, card: BaseCard, current_player_id: int, p1_emperor_slot: Node, p2_emperor_slot: Node) -> bool:
+	# --- 1. THE MOST IMPORTANT CHECK (Must be first) ---
+	if slot.is_occupied:
+		return false
+	
 	var card_data = card.get_current_card_data_dict()
 	var active_emperor_slot = p1_emperor_slot if current_player_id == 1 else p2_emperor_slot
 
@@ -25,28 +29,19 @@ func is_valid_card_placement(slot: Node, card: BaseCard, current_player_id: int,
 	if card_data["type"] == GameConstants.CardType.EMPEROR:
 		return active_emperor_slot == null
 	
-	# Rule 1: Cards can be placed within range of emperor
-	if active_emperor_slot != null: # active_emperor_slot is already resolved based on player ID
+	# Rule 1: Range from Emperor
+	if active_emperor_slot != null:
 		var distance_to_emperor = calculate_manhattan_distance(slot, active_emperor_slot)
 		if distance_to_emperor <= GameConstants.HERO_PLACEMENT_FROM_EMPEROR:
 			return true
 	
-	
-	# Rule 2: Cards can be placed adjacent to allied hero cards
+	# Rule 2: Adjacency to Hero
 	for neighbor_slot in get_adjacent_slots(slot):
 		if neighbor_slot.is_occupied and neighbor_slot.card_in_slot != null:
 			var neighbor_card = neighbor_slot.card_in_slot
-			var neighbor_card_data = neighbor_card.get_current_card_data_dict()
-			
-			# If the neighbor is face down, it cannot extend range (it's a mystery)
-			if neighbor_card.is_face_down:
-				continue
-
-			if is_ally_card(neighbor_card, card) and neighbor_card_data["type"] == GameConstants.CardType.HERO:	
-				print("Found adjacent ACTIVE hero at: ", neighbor_slot.name)
+			if not neighbor_card.is_face_down and is_ally_card(neighbor_card, card) and neighbor_card.card_type_enum == GameConstants.CardType.HERO:
+				print("Checking neighbor ", neighbor_card.name, " FaceDown: ", neighbor_card.is_face_down)
 				return true
-	
-	# No valid placement conditions met
 	return false
 
 # Visually highlight valid placement locations for a card being dragged

@@ -72,32 +72,32 @@ func get_player_name() -> String:
 	return player_name
 
 func get_peer_id_for_player(player_num: int) -> int:
-	var sorted_ids = players.keys()
-	sorted_ids.sort() # Ensure consistent order: [HostID, ClientID]
-	
-	if is_dedicated_server:
-		# Dedicated Server: ID 1 is not a player.
-		# Player 1 is sorted_ids[0], Player 2 is sorted_ids[1]
-		if player_num == 1 and sorted_ids.size() > 0: return sorted_ids[0]
-		if player_num == 2 and sorted_ids.size() > 1: return sorted_ids[1]
-	else:
-		# Listen Server: ID 1 is the Host (Player 1).
-		# Player 1 is sorted_ids[0] (which is 1), Player 2 is sorted_ids[1]
-		if player_num == 1 and sorted_ids.size() > 0: return sorted_ids[0]
-		if player_num == 2 and sorted_ids.size() > 1: return sorted_ids[1]
+	# Iterate all known players in the dictionary
+	for peer_id in players:
+		# Read the 'player_num' that we permanently assigned on connection
+		if players[peer_id].has("player_num") and players[peer_id].player_num == player_num:
+			return peer_id # Found the correct peer for the requested player number
+			
+	# Fallback for a Listen Server (where the Host is always Player 1, ID 1)
+	if not is_dedicated_server and player_num == 1:
+		return 1
 		
-	return -1 # Not found
+	return -1 # Player not found
 
 func get_player_num_for_peer_id(peer_id: int) -> int:
+	# 1. Check if the server's dictionary of players contains this peer.
 	if players.has(peer_id):
-		# If the dictionary has the number, return it
+		# 2. If it does, check if we have stored a 'player_num' for them.
 		if players[peer_id].has("player_num"):
+			# 3. Return that stored number. This is deterministic and reliable.
 			return players[peer_id].player_num
 			
-	# Fallback for Listen Server Host (ID 1) if not in dict
+	# 4. Handle a specific edge case for a Listen Server (not a dedicated server).
+	# If the host (peer_id=1) is checking their own number, they are always Player 1.
 	if not is_dedicated_server and peer_id == 1:
 		return 1
 		
+	# 5. If the peer was not found, return an invalid number.
 	return -1
 
 

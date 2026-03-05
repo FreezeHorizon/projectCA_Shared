@@ -5,14 +5,14 @@ signal mulligan_options_received(card_names: Array)
 signal game_started
 signal card_drawn(card_key, owner_id)
 var battle_manager: Node
-signal game_state_updated(player_id: int, current_ap: int, max_ap: int, round: int)
+signal game_state_updated(state: Dictionary)
 signal unit_moved(card_name: String, slot_name: StringName, card_data: Dictionary)
-signal unit_attack_initiated(attacker_name: String, defender_name: String)
-signal unit_retaliation_initiated(retaliator_name: String, attacker_name: String)
-signal unit_flipped(card_name: String, is_face_down: bool)
+signal unit_attack_initiated(atk_name: String, def_name: String, atk_hp: int, def_hp: int, atk_dead: bool, def_dead: bool, reveal_data: Dictionary)
+signal unit_flipped(card_name: String, is_face_down: bool, card_data: Dictionary)
 signal unit_placed(card_name: String, slot_name: StringName, card_data: Dictionary)
 signal initial_state_received(my_cards_data: Array, enemy_hand_count: int)
 signal placement_validation_result(result_code: int)
+signal game_over(winner_id: int)
 
 # --- SERVER SIDE: CONNECT SIGNALS ---
 func setup_server_connections(bm_node: Node):
@@ -33,12 +33,8 @@ func setup_server_connections(bm_node: Node):
 			battle_manager.unit_moved.connect(_on_server_unit_moved)
 			
 	if battle_manager.has_signal("unit_attack_initiated"):
-		if not battle_manager.unit_attack_initiated.is_connected(_on_server_unit_attack):
-			battle_manager.unit_attack_initiated.connect(_on_server_unit_attack)
-			
-	if battle_manager.has_signal("unit_retaliation_initiated"):
-		if not battle_manager.unit_retaliation_initiated.is_connected(_on_server_unit_retaliate):
-			battle_manager.unit_retaliation_initiated.connect(_on_server_unit_retaliate)
+		if not battle_manager.unit_attack_initiated.is_connected(_on_server_unit_attack_initiated):
+			battle_manager.unit_attack_initiated.connect(_on_server_unit_attack_initiated)
 			
 	if battle_manager.has_signal("unit_flipped"):
 		if not battle_manager.unit_flipped.is_connected(_on_server_unit_flipped):
@@ -49,18 +45,13 @@ func setup_server_connections(bm_node: Node):
 			battle_manager.unit_placed_on_board.connect(_on_server_unit_placed)
 	print("NetworkInterface: Signals connected safely (Checked for duplicates).")
 
-
-
-
 # --- SERVER EVENT HANDLERS (Signal -> RPC) ---
 
-func _on_server_game_state_updated(p_id, cur_ap, max_ap, round_num):
-	# Send to clients
-	client_update_game_state.rpc(p_id, cur_ap, max_ap, round_num)
+func _on_server_game_state_updated(state: Dictionary):
+	client_update_game_state.rpc(state)
 	
-	# FORCE LOCAL UPDATE FOR HOST (If not dedicated)
 	if not ConnectionManager.is_dedicated_server:
-		client_update_game_state(p_id, cur_ap, max_ap, round_num)
+		client_update_game_state(state)
 
 func _on_server_unit_placed(card: BaseCard):
 	var slot_name = card.card_is_in_slot.data.slot_name
@@ -99,28 +90,42 @@ func _on_server_card_added(card_node: BaseCard, owner_id: int):
 			print("Server: Sending GHOST draw to Opponent (P", p_num, ")")
 			client_receive_card_draw.rpc_id(peer_id, "HIDDEN", "Unknown", owner_id)
 
-func _on_server_unit_attack(attacker: BaseCard, defender: BaseCard):
-	client_handle_attack.rpc(attacker.name, defender.name)
-
-func _on_server_unit_retaliate(retaliator: BaseCard, original_attacker: BaseCard):
-	client_handle_retaliation.rpc(retaliator.name, original_attacker.name)
+func _on_server_unit_attack_initiated(attacker: BaseCard, defender: BaseCard, atk_hp: int, def_hp: int, atk_dead: bool, def_dead: bool, reveal_data: Dictionary):
+	client_handle_attack.rpc(
+		attacker.name, 
+		defender.name,
+		atk_hp, def_hp, atk_dead, def_dead,
+		reveal_data
+	)
 
 func _on_server_unit_flipped(card: BaseCard):
-	client_handle_flip.rpc(card.name, card.is_face_down)
+	var data_to_send = {}
+	
+	# If flipping UP, send the data so opponent can see the art/stats
+	if not card.is_face_down:
+		data_to_send = card.get_current_card_data_dict()
+		data_to_send["atlasPath"] = card.atlas_path_info
+		data_to_send["atlasRegion"] = card.atlas_region_info
+	
+	client_handle_flip.rpc(card.name, card.is_face_down, data_to_send)
 
 
 
 # --- CLIENT SIDE: RECEIVE RPCs (RPC -> Visuals) ---
 
+@rpc("authority", "call_local", "reliable")
+func client_game_started():
+	if OS.has_feature("server"): return
+	emit_signal("game_started")
 
 @rpc("authority", "call_remote", "reliable")
-func client_update_game_state(p_id, cur_ap, max_ap, round_num):
+func client_handle_game_over(winner_id: int):
+	emit_signal("game_over", winner_id)
+
+@rpc("authority", "call_remote", "reliable")
+func client_update_game_state(state: Dictionary):
 	if OS.has_feature("server"): return
-	
-	# Emit the signal so ClientEventHandler can hear it
-	emit_signal("game_state_updated", p_id, cur_ap, max_ap, round_num)
-	
-	print("Client: Game State Updated. Round: ", round_num)
+	emit_signal("game_state_updated", state)
 
 @rpc("authority", "call_remote", "reliable")
 func client_handle_placement(card_name: String, slot_name: StringName, card_data: Dictionary):
@@ -144,22 +149,16 @@ func client_handle_move(card_name: String, slot_name: StringName):
 
 
 @rpc("authority", "call_remote", "reliable")
-func client_handle_attack(attacker_name: String, defender_name: String):
+func client_handle_attack(atk_name: String, def_name: String, atk_hp: int, def_hp: int, atk_dead: bool, def_dead: bool, reveal_data: Dictionary = {}):
 	if OS.has_feature("server"): return
-	print("Client: Network says attack")
-	emit_signal("unit_attack_initiated", attacker_name, defender_name)
+	print("Client: Attack RPC received.")
+	emit_signal("unit_attack_initiated", atk_name, def_name, atk_hp, def_hp, atk_dead, def_dead, reveal_data)
 
 @rpc("authority", "call_remote", "reliable")
-func client_handle_retaliation(retaliator_name: String, attacker_name: String):
+func client_handle_flip(card_name: String, is_face_down: bool, card_data: Dictionary = {}):
 	if OS.has_feature("server"): return
-	print("Client: Network says retaliate")
-	emit_signal("unit_retaliation_initiated", retaliator_name, attacker_name)
-
-@rpc("authority", "call_remote", "reliable")
-func client_handle_flip(card_name: String, is_face_down: bool):
-	if OS.has_feature("server"): return
-	print("Client: Network says flip")
-	emit_signal("unit_flipped", card_name, is_face_down)
+	print("Client: Network says flip ", card_name, " FaceDown: ", is_face_down)
+	emit_signal("unit_flipped", card_name, is_face_down, card_data)
 
 @rpc("authority", "call_local", "reliable")
 func client_receive_mulligan_options(card_names: Array):
@@ -186,6 +185,10 @@ func request_initial_hand_state():
 func request_end_turn():
 	server_process_end_turn.rpc_id(1)
 
+func request_extra_draw():
+	server_process_extra_draw.rpc_id(1)
+
+
 func request_placement_validate(card_db_key: String, slot_name: StringName):
 	server_validate_placement.rpc_id(1, card_db_key, slot_name)
 
@@ -193,10 +196,19 @@ func request_play_card(card_db_key: String, slot_name: StringName, is_face_down:
 	# Send to Server (ID 1)
 	server_process_play_card.rpc_id(1, card_db_key, slot_name, is_face_down)
 
+func request_attack(attacker_key: String, defender_key: String):
+	server_process_attack_request.rpc_id(1, attacker_key, defender_key)
+
 @warning_ignore("unused_parameter")
 func request_mulligan_confirm(kept_cards: Array, returned_keys: Array):
 	# We probably only need to send the returned keys to the server
 	server_process_mulligan.rpc_id(1, returned_keys)
+
+func request_flip_card(card_name: String):
+	server_process_flip_request.rpc_id(1, card_name)
+
+func request_move_card(card_name: String, target_slot_name: StringName):
+	server_process_move_request.rpc_id(1, card_name, target_slot_name)
 
 func notify_client_mulligan_start(player_num: int, cards: Array):
 	# Convert Game Player Number (1, 2) to Network Peer ID (1, 348215, etc.)
@@ -208,10 +220,28 @@ func notify_client_mulligan_start(player_num: int, cards: Array):
 
 	var card_data_array = []
 	for card in cards:
-		card_data_array.append(card.db_key)
+		# Send both pieces of info: the Key for the picture, and the Name for the ID
+		card_data_array.append({"key": card.get_database_key(), "name": card.name})
 	
-	# Send to the correct network ID
+	# Update your RPC to accept this array of dictionaries
 	client_receive_mulligan_options.rpc_id(target_peer_id, card_data_array)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_process_attack_request(atk_key: String, def_key: String):
+	if not multiplayer.is_server(): return
+	
+	var sender_id = multiplayer.get_remote_sender_id()
+	var player_num = ConnectionManager.get_player_num_for_peer_id(sender_id)
+	
+	# Pass to BattleManager
+	battle_manager.handle_attack_request(player_num, atk_key, def_key)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_process_move_request(card_name: String, slot_name: StringName):
+	if not multiplayer.is_server(): return
+	var sender_id = multiplayer.get_remote_sender_id()
+	var player_num = ConnectionManager.get_player_num_for_peer_id(sender_id)
+	battle_manager.handle_move_request(player_num, card_name, slot_name)
 
 @rpc("any_peer", "call_remote", "reliable")
 func server_process_hand_request():
@@ -238,22 +268,28 @@ func server_process_play_card(card_db_key: String, slot_name: StringName, is_fac
 	battle_manager.handle_play_card_request(player_num, card_db_key, slot_name, is_face_down)
 
 @rpc("any_peer", "call_remote", "reliable")
-func server_process_mulligan(returned_keys: Array):
+func server_process_flip_request(card_name: String):
 	if not multiplayer.is_server(): return
-	
 	var sender_id = multiplayer.get_remote_sender_id()
-	
-	# CONVERT Peer ID -> Player Number
 	var player_num = ConnectionManager.get_player_num_for_peer_id(sender_id)
 	
-	if player_num == -1:
-		printerr("NetworkInterface: Unknown peer ID ", sender_id, " sent mulligan choice.")
-		return
+	battle_manager.handle_flip_request(player_num, card_name)
 
-	print("Server: Received mulligan choice from Peer ", sender_id, " (Player ", player_num, ")")
+@rpc("any_peer", "call_remote", "reliable")
+func server_process_mulligan(returned_names: Array): # Rename this for clarity
+	if not multiplayer.is_server(): return
+	var sender_id = multiplayer.get_remote_sender_id()
+	var player_num = ConnectionManager.get_player_num_for_peer_id(sender_id)
 	
-	# Pass the Player Number (1 or 2) to BattleManager
-	battle_manager.execute_mulligan_resolution(player_num, returned_keys)
+	if player_num != -1:
+		# Pass the array of names to the BattleManager
+		print("Server: Received mulligan choice from Peer ", sender_id, " (Player ", player_num, ")")
+		battle_manager.execute_mulligan_resolution(player_num, returned_names)
+
+@rpc("any_peer", "call_remote", "reliable")
+func server_process_extra_draw():
+	if not multiplayer.is_server(): return
+	battle_manager.execute_extra_draw() # You already have this function
 
 @rpc("any_peer", "call_remote", "reliable")
 func server_process_end_turn():
@@ -274,13 +310,12 @@ func server_validate_placement(card_key: String, slot_name: StringName):
 	# Pass to BattleManager
 	battle_manager.handle_placement_validation_request(sender_id, player_num, card_key, slot_name)
 
+
 func send_validation_response(peer_id: int, result_code: int):
 	client_receive_validation_response.rpc_id(peer_id, result_code)
 
 func broadcast_game_start():
 	client_game_started.rpc()
 
-@rpc("authority", "call_local", "reliable")
-func client_game_started():
-	if OS.has_feature("server"): return
-	emit_signal("game_started")
+func broadcast_game_over(winner_id: int):
+	client_handle_game_over.rpc(winner_id)

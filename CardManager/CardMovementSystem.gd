@@ -40,10 +40,13 @@ func move_card_to_slot(card: Node2D, target_slot: Node2D) -> void:
 			# On Server use battle_manager.current_player_id if needed, but local index logic is safer for shared code
 			card_manager.emperor_position[player_idx] = target_slot
 			print("Emperor moved to: ", target_slot.name) 
-
-		card_manager.reset_all_slot_overlays()
+		if not ConnectionManager.is_dedicated_server:
+			card_manager.reset_all_slot_overlays()
+			# We use GameConstants.TriggerSource.PLAYER_CHOICE (0) as the source.
+		if card.has_method("use_action"):
+			card.use_action(card.ActionType.MOVE, 0)
 		print("Updating movement maps for card: ", card.name)
-		card_manager.board_state.update_affected_movement_maps(card)
+		card_manager.board_state.precompute_all_movement_maps()
 
 func swap_card_positions(card1: Node2D, card2: Node2D) -> void:
 	var slot1 = card1.card_is_in_slot
@@ -75,10 +78,9 @@ func swap_card_positions(card1: Node2D, card2: Node2D) -> void:
 	else:
 		card_manager.reset_all_slot_overlays()
 		return
-	
-	card_manager.reset_all_slot_overlays()
-	card_manager.board_state.update_affected_movement_maps(card1)
-	card_manager.board_state.update_affected_movement_maps(card2)
+	if not ConnectionManager.is_dedicated_server:
+		card_manager.reset_all_slot_overlays()
+	card_manager.board_state.precompute_all_movement_maps()
 
 func perform_direct_swap(card1: Node2D, card2: Node2D, slot1: Node2D, slot2: Node2D) -> void:
 	slot1.is_occupied = false
@@ -98,10 +100,12 @@ func perform_direct_swap(card1: Node2D, card2: Node2D, slot1: Node2D, slot2: Nod
 
 	card1.use_action(card1.ActionType.MOVE, 0) # Assuming 0 is PLAYER_CHOICE enum value
 	card2.use_action(card2.ActionType.MOVE, 0)
-	
+	card1.set_meta("original_y", card1.position.y)
+	card2.set_meta("original_y", card2.position.y)
 	card1.state_machine.transition_to(card1.state_machine.State.ON_BOARD_IDLE, {})
 	card2.state_machine.transition_to(card2.state_machine.State.ON_BOARD_IDLE, {})
-
+	card_manager.board_state.precompute_all_movement_maps()
+	
 func place_card_in_slot(card: Node2D, slot: Node2D) -> void:
 	# 1. Update Hierarchy
 	if card.get_parent() != card_manager:
@@ -152,12 +156,12 @@ func place_card_in_slot(card: Node2D, slot: Node2D) -> void:
 
 	# 5. Visuals
 	card._update_visual_state() 
-	card_manager.board_state.update_movement_maps_for_obstacle_change(slot)
+	card_manager.board_state.precompute_all_movement_maps()
 
 func reset_all_card_actions() -> void:
 	for card in get_tree().get_nodes_in_group("Cards"):
 		if card.is_player_card and card.card_is_in_slot != null:
 			card.reset_action()
-	
+
 	card_manager.board_state.clear_all_movement_maps()
 	card_manager.board_state.precompute_all_movement_maps()

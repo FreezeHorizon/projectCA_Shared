@@ -11,6 +11,8 @@ signal hovered_off(card_instance: Card)
 #-----------------------------------------------------------------------------
 func _ready() -> void:
 	super._ready() # CORRECTED: Call super for _ready (usually works like this or with ())
+	if material:
+		material = material.duplicate()
 	self.is_player_card = true 
 	self.scale = Vector2(0.5, 0.5)
 	self.position = Vector2(1110.0, 631.0)
@@ -34,119 +36,18 @@ func _ready() -> void:
 #-----------------------------------------------------------------------------
 # VISUAL UPDATE IMPLEMENTATIONS (Overrides from BaseCard)
 #-----------------------------------------------------------------------------
-func _update_visuals_from_data() -> void:
-	super._update_visuals_from_data() # CORRECTED (or can be omitted if base is just 'pass')
-	# print("Card '", name, "': Updating visuals. Data: ", get_current_card_data_dict())
-
-	# Paths must match your Card.tscn structure
-	var card_image_node = get_node_or_null("CardImage")
-	if is_instance_valid(card_image_node) and atlas_path_info != "" and atlas_region_info.size() == 4:
-		var new_atlas = AtlasTexture.new()
-		var atlas_res = load(atlas_path_info)
-		if atlas_res is AtlasTexture: new_atlas.atlas = atlas_res.atlas
-		elif atlas_res is Texture2D: new_atlas.atlas = atlas_res
-		else: printerr("Card '", name, "': Failed to load atlas from path: ", atlas_path_info); return
-		
-		new_atlas.region = Rect2(atlas_region_info[0], 
-								atlas_region_info[1], 
-								atlas_region_info[2], 
-								atlas_region_info[3])
-		card_image_node.texture = new_atlas
-	
-	var stats_node = get_node_or_null("CardImage/Stats")
-	if is_instance_valid(stats_node):
-		var card_type_to_check = card_type_enum # Use the inherited variable
-		# Ensure GameConstants or CardDB is correctly accessed for enums
-		if GameConstants:
-			match card_type_to_check:
-				GameConstants.CardType.ARTIFACT, GameConstants.CardType.SPELL:
-					stats_node.visible = false
-				GameConstants.CardType.PLOY:
-					stats_node.visible = false
-					if base_health > 0: 
-						var health_img_node = stats_node.get_node_or_null("HealthImage")
-						if is_instance_valid(health_img_node): health_img_node.visible = true
-				_: 
-					stats_node.visible = true
-		else: # Fallback if GameConstants not ready or enums missing
-			match card_type_to_check: 
-				3, 4: stats_node.visible = false # Assuming ARTIFACT=3, SPELL=4 from old enum
-				2: # PLOY
-					stats_node.visible = false
-					if base_health > 0: stats_node.get_node_or_null("HealthImage").visible = true
-				_: stats_node.visible = true
-
-
-		var attack_label = stats_node.get_node_or_null("AttackImage/Attack")
-		if is_instance_valid(attack_label): attack_label.text = str(base_attack)
-		
-		_update_health_visual()
-
-	var ap_cost_node = get_node_or_null("ApCostImage/Cost")
-	if is_instance_valid(ap_cost_node): ap_cost_node.text = str(base_cost)
-	
-	var type_display_node = get_node_or_null("TypeImage/Type") 
-	if is_instance_valid(type_display_node): type_display_node.text = str(card_type_enum)
-	
-	_update_health_visual()
-	_update_visual_state()
-
-func _update_health_visual() -> void:
-	super._update_health_visual() # CORRECTED (or can be omitted if base is just 'pass')
-	var health_label = get_node_or_null("CardImage/Stats/HealthImage/Health")
-	if is_instance_valid(health_label):
-		health_label.text = str(current_health)
-		if current_health < base_health and current_health > 0:
-			print("card_damanged!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-			health_label.add_theme_color_override("default_color", Color("#f16d87")) 
-		else:
-			if health_label.has_theme_color_override("default_color"): # Check if override exists before removing
-				health_label.remove_theme_color_override("default_color")
 
 func _update_visual_state() -> void:
-	super._update_visual_state() # Call base if it ever has shared logic
+	if not is_instance_valid(card_is_in_slot):
+	# --- PLAYER HAND LOGIC (Face Up) ---
+		if get_node_or_null("CardImage"): get_node("CardImage").visible = true
+		if get_node_or_null("CardBackImage"): get_node("CardBackImage").visible = false
+		if get_node_or_null("ApCostImage"): get_node("ApCostImage").visible = true
+		if get_node_or_null("TypeImage"): get_node("TypeImage").visible = true
+		return # Exit, don't run board logic
 
-	var card_image_node = get_node_or_null("CardImage")
-	var card_back_image_node = get_node_or_null("CardBackImage") # Assuming this is the name
-	var ap_cost_node = get_node_or_null("ApCostImage")
-	var type_image_node = get_node_or_null("TypeImage")
-
-	# Basic check for essential display nodes
-	if not is_instance_valid(card_image_node) or not is_instance_valid(card_back_image_node):
-		printerr(name, ": CardImage or CardBackImage node missing in _update_visual_state!")
-		return
-
-	#print(name, ": _update_visual_state() called. is_face_down = ", is_face_down, ", card_is_in_slot = ", is_instance_valid(card_is_in_slot))
-
-	if not is_instance_valid(card_is_in_slot): # Card is IN HAND (Player's perspective)
-		#print("	 Card.gd: In hand. Forcing face-up.")
-		card_image_node.visible = true
-		card_back_image_node.visible = false
-		if is_instance_valid(ap_cost_node): ap_cost_node.visible = true
-		if is_instance_valid(type_image_node): type_image_node.visible = true
-		# Stats visibility is handled by _update_visuals_from_data based on card type
-		return 
-	
-	# Card is ON THE BOARD
-	if is_face_down: 
-		print("	 Card.gd: On board & IS FACE DOWN. Hiding face, showing back.")
-		card_image_node.visible = false
-		card_back_image_node.visible = true
-		print("    >> IMMEDIATELY AFTER SET: card_image.visible = ", card_image_node.visible, ", card_back.visible = ", card_back_image_node.visible)
-		if is_instance_valid(ap_cost_node): ap_cost_node.visible = false
-		if is_instance_valid(type_image_node): type_image_node.visible = false
-		# if is_instance_valid(highlight_node): highlight_node.visible = false 
-	else: # On board & IS FACE UP
-		print("	 Card.gd: On board & IS FACE UP. Showing face, hiding back.")
-		card_image_node.visible = true
-		card_back_image_node.visible = false
-		print("    >> IMMEDIATELY AFTER SET: card_image.visible = ", card_image_node.visible, ", card_back.visible = ", card_back_image_node.visible)
-		# For face-up cards on board, AP cost and Type images are usually hidden by CardStateMachine's ON_BOARD_ENTER
-		# Ensure they are hidden here as well if that's the design.
-		if is_instance_valid(ap_cost_node): ap_cost_node.visible = false 
-		if is_instance_valid(type_image_node): type_image_node.visible = true
-
-	# print(name, ": Visual state updated. Is face down: ", is_face_down)
+	# --- BOARD LOGIC (Run Base) ---
+	super._update_visual_state()
 
 #-----------------------------------------------------------------------------
 # INPUT HANDLERS (Specific to Player Card)

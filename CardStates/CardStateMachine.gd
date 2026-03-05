@@ -127,7 +127,7 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 			return to_state == State.IN_HAND  # Only allow transition to IN_HAND when mulligan is over
 		State.IN_HAND:
 			# When in hand, don't allow hovering if in mulligan phase or if a card is being dragged
-			if not OS.has_feature("server"):
+			if not ConnectionManager.is_dedicated_server:
 				var mulligan_manager = get_parent().get_node_or_null("../GameBoard/MulliganManager")
 				if mulligan_manager and mulligan_manager.mull_phase:
 					return to_state == State.MULLIGAN
@@ -159,7 +159,8 @@ func _is_valid_transition(from_state: State, to_state: State) -> bool:
 					to_state == State.ATTACKING or \
 					to_state == State.DAMAGED or \
 					to_state == State.DEATH or \
-					to_state == State.RETALIATE
+					to_state == State.RETALIATE or \
+					to_state == State.MOVING
 		State.SELECTED:
 			return to_state == State.ON_BOARD_IDLE or \
 					to_state == State.MOVING or \
@@ -267,7 +268,7 @@ func _place_on_board() -> void:
 		var ap_cost = card.get_node_or_null("ApCostImage")
 		if ap_cost: ap_cost.visible = false
 		var type_img = card.get_node_or_null("TypeImage")
-		if type_img: type_img.visible = false
+		if type_img: type_img.visible = true
 		
 		# Set scale/z_index
 		card.scale = state_config[State.ON_BOARD_ENTER]["scale"]
@@ -275,8 +276,7 @@ func _place_on_board() -> void:
 		
 		# Enable collision after animation
 		call_deferred("_enable_board_collision")
-	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
-	card.use_action(card.ActionType.ENTER,trigger_source)
+	card.use_action(card.ActionType.ENTER,GameConstants.TriggerSource.PLAYER_CHOICE)
 
 func _enable_board_collision() -> void:
 	if not _is_server():
@@ -305,6 +305,7 @@ func _select_on_board() -> void:
 	if not _is_server():
 		card.get_node("CardImage").position -= state_config[State.SELECTED]["y_offset"]
 		card.get_node("CardBackImage").position -= state_config[State.SELECTED]["y_offset"]
+		card.get_node("TypeImage").position -= state_config[State.SELECTED]["y_offset"]
 		card.get_node("CardOutline").scale -= Vector2(0.05,0.05)
 		card.get_node("CardOutline").position += Vector2(0,6)
 		card.get_node("Selected").play("Selected")
@@ -316,8 +317,9 @@ func _deselect_on_board() -> void:
 		card.get_node("Selected").stop()
 		card.get_node("CardBackImage").position += state_config[State.SELECTED]["y_offset"]
 		card.get_node("CardImage").position += state_config[State.SELECTED]["y_offset"]
+		card.get_node("TypeImage").position += state_config[State.SELECTED]["y_offset"]
 		card.get_node("CardOutline").scale += Vector2(0.05,0.05)
-		card.get_node("CardOutline").position -= Vector2(0,6)  
+		card.get_node("CardOutline").position -= Vector2(0,6)
 		card.scale = state_config[State.ON_BOARD_IDLE]["scale"]
 		card.z_index = state_config[State.ON_BOARD_IDLE]["z_index"]
 
@@ -325,8 +327,7 @@ func _start_moving() -> void:
 	if not _is_server():
 		card.scale = state_config[State.MOVING]["scale"]
 		card.z_index = state_config[State.MOVING]["z_index"]
-	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
-	card.use_action(card.ActionType.MOVE, trigger_source)
+	card.use_action(card.ActionType.MOVE, GameConstants.TriggerSource.PLAYER_CHOICE)
 
 func _start_attacking() -> void:
 	# Visuals
@@ -337,8 +338,7 @@ func _start_attacking() -> void:
 		if selected: selected.stop() # Use get_node_or_null to be safe
 	
 	# Logic
-	var trigger_source = event_context.get("trigger_source", {"trigger_source": GameConstants.TriggerSource.PLAYER_CHOICE})
-	card.use_action(card.ActionType.ATTACK, trigger_source)
+	card.use_action(card.ActionType.ATTACK, GameConstants.TriggerSource.PLAYER_CHOICE)
 
 func _take_damage() -> void:
 	if not _is_server():

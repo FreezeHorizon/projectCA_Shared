@@ -6,6 +6,7 @@ extends Node2D
 signal card_flipped(card_instance: BaseCard, is_now_face_up: bool)
 signal health_changed(new_health: int, old_health: int, card_instance: BaseCard)
 signal died(card_instance: BaseCard) # This signal means "I have completed my death process and am being removed"
+signal attack_impact_moment
 
 
 var animation_player: AnimationPlayer
@@ -42,6 +43,9 @@ var is_entering_board_face_down: bool = false
 var has_move_action_available: bool = true
 var has_attack_action_available: bool = true
 var has_flip_action_available: bool = true
+var has_flipped_up_this_turn: bool = false
+var _pending_hp_target: int = -1
+
 # 'performed_action_type' might become less central, or track the *last* major board action.
 # Let's keep it for now as it can inform visuals or other logic.
 enum ActionType { NONE, ENTER, MOVE, ATTACK, FLIP, SPELL_CAST }
@@ -118,8 +122,8 @@ func reset_dynamic_stats_to_base() -> void:
 	current_cost = base_cost
 	current_move_range = base_move_range
 	current_attack_range = base_attack_range
-	# print(name, " (", db_key, ") stats reset. HP: ", current_health, "/", base_health) # Less verbose for now
-	_update_health_visual()
+	_update_health_visual(false)
+	_update_attack_visual()
 
 func get_database_key() -> String:
 	return db_key
@@ -141,6 +145,44 @@ func get_current_card_data_dict() -> Dictionary:
 		"can_move": has_move_action_available,        # Specific status
 		"can_attack": has_attack_action_available     # Specific status
 	}
+
+func get_attack_animation_direction(target_slot: Node2D) -> String:
+	if not is_instance_valid(card_is_in_slot) or not is_instance_valid(target_slot):
+		return "AttackDown" # Fallback
+
+	var my_pos = card_is_in_slot.data.grid_position
+	var target_pos = target_slot.data.grid_position
+	
+	var diff = target_pos - my_pos
+	
+	# Priority Logic:
+	# If Y distance is greater than X, it's strictly Up/Down.
+	# If X distance is greater OR equal (diagonals), it's Left/Right.
+	if abs(diff.x) >= abs(diff.y):
+		return "Attacks/AttackRight" if diff.x > 0 else "Attacks/AttackLeft"
+	else:
+		return "Attacks/AttackDown" if diff.y > 0 else "Attacks/AttackUp"
+
+func prime_health_update(server_final_hp: int):
+	_pending_hp_target = server_final_hp
+
+func take_combat_damage():
+	# 1. Emit signal so CombatUtil knows impact happened
+	emit_signal("attack_impact_moment")
+
+	if _pending_hp_target != -1:
+		# 2. Calculate Delta for Visuals (Particles)
+		var damage_taken = current_health - _pending_hp_target
+		var is_dying = _pending_hp_target <= 0
+		# 3. Update State (Absolute Authority)
+		update_health_display(_pending_hp_target, is_dying)
+		
+		# 4. Show Particle (If damage was taken)
+		if damage_taken > 0:
+			_spawn_damage_particle(damage_taken)
+		
+		# Reset
+		_pending_hp_target = -1
 
 func set_as_emperor(is_emp: bool = true) -> void:
 	is_emperor_card = is_emp
@@ -178,8 +220,9 @@ func use_action(action: ActionType, trigger_source: GameConstants.TriggerSource)
 			has_flip_action_available = false
 
 	# After any action, apply the visual cue if all actions are now used up.
-	if not has_move_action_available and not has_attack_action_available and not has_flip_action_available:
-		_apply_action_used_visuals()
+	if not OS.has_feature("server"):
+		if not has_move_action_available and not has_attack_action_available and not has_flip_action_available:
+			_apply_action_used_visuals()
 
 func flip_card(face_up: bool, trigger_source: GameConstants.TriggerSource):
 	var was_face_down = is_face_down
@@ -190,30 +233,34 @@ func flip_card(face_up: bool, trigger_source: GameConstants.TriggerSource):
 
 	print(name, ": Flipping card. Triggered by: ", GameConstants.TriggerSource.keys()[trigger_source])
 	
-	# --- Handle Effect Triggers FIRST ---
-	# This logic must happen BEFORE the state changes, while we still know it "was" face-down.
+	# --- FRESH FLIP LOGIC (The "Attack Refresh" Rule) ---
+	if was_face_down and face_up:
+		if not has_flipped_up_this_turn:
+			print(name, ": Fresh Flip! Granting attack action for the turn.")
+			has_flipped_up_this_turn = true
+			
+			# RULE: If a card is flipped up for the first time this turn, 
+			# it gains/resets its Attack Action.
+			has_attack_action_available = true 
+			
+			# Note: We do NOT reset 'has_move_action_available' because 
+			# you said "a card can only realistically move once per turn".
+	
+	# --- Handle Effect Triggers ---
 	if was_face_down and face_up: # It was face-down and is being flipped UP
 		match trigger_source:
 			GameConstants.TriggerSource.PLAYER_CHOICE:
-				print(name, ": 'On-Faceup' effects WILL trigger.")
-				# _trigger_on_faceup_effect()
+				print(name, ": 'On-Faceup' (Battlecry) effects trigger.")
 			GameConstants.TriggerSource.COMBAT_REVEAL: 
-				print(name, ": 'On-Faceup' effects DO NOT trigger.")
-			GameConstants.TriggerSource.EFFECT_ALLY:
-				print(name, ": 'EFFECT_ALLY' effects trigger.")
-			GameConstants.TriggerSource.EFFECT_ENEMY: 
-				print(name, ": 'EFFECT_ENEMY' effects trigger.")
-			GameConstants.TriggerSource.GAME_RULE: 
-				print(name, ": 'GAME_RULE' effects trigger.")
-			_: #Default fall back
-				print(name, ": 'On-Faceup' effects DO NOT trigger.")
+				print(name, ": Revealed in combat. (No Battlecry)")
+			_:
+				print(name, ": Flipped by Effect/Rule.")
+
 	# --- Handle Action Consumption ---
 	if trigger_source == GameConstants.TriggerSource.PLAYER_CHOICE:
 		use_action(ActionType.FLIP, GameConstants.TriggerSource.PLAYER_CHOICE)
 
-	# --- INITIATE THE STATE CHANGE ---
-	# This call will trigger the setter logic above, which handles stat resets,
-	# visual updates, and EMITTING THE 'card_flipped' SIGNAL.
+	# --- INITIATE STATE CHANGE ---
 	is_face_down = new_is_face_down
 
 func reset_action() -> void:
@@ -224,12 +271,7 @@ func reset_action() -> void:
 	has_move_action_available = true
 	has_attack_action_available = true
 	has_flip_action_available = true
-
-	# Now, apply restrictions based on the card's state at the start of the turn.
-	if is_face_down:
-		# A card starting its turn face-down cannot use its attack action.
-		has_attack_action_available = false
-	
+	has_flipped_up_this_turn = false
 	print(name, " actions reset. Move:", has_move_action_available, "Attack:", has_attack_action_available, "Flip:", has_flip_action_available)
 
 	if card_is_in_slot and state_machine and is_instance_valid(state_machine):
@@ -305,23 +347,146 @@ func _die() -> void: # This is the base implementation, can be overridden
 
 
 # --- VIRTUAL METHODS - To be overridden in Card.gd/EnemyCard.gd ---
-func _update_visuals_from_data() -> void:
-	# This is a VIRTUAL method, subclasses (Card.gd, EnemyCard.gd) implement it.
-	# They should also call _update_visual_state() within their implementation
-	# OR this base method can call it if there are base visuals to update regardless of face state.
-	# For now, let's assume subclasses will handle it.
-	# print(name, ": BaseCard _update_visuals_from_data called.")
-	_update_visual_state() # Call it here to ensure it's always considered
-	pass 
 
-func _update_health_visual() -> void:
-	pass 
+func sync_state_from_data(data: Dictionary):
+	# 1. LOAD BASELINE FROM DATABASE
+	# This fixes the "Dummy has 0 base stats" issue
+	if data.has("db_key"):
+		self.db_key = data.db_key
+		if CardDatabase.CARDS.has(self.db_key):
+			var db_data = CardDatabase.CARDS[self.db_key]
+			self.card_name = db_data.get("displayName", self.db_key)
+			self.base_attack = db_data.get("attack", 0)
+			self.base_health = db_data.get("health", 1)
+			self.base_cost = db_data.get("apCost", 0)
+			self.base_move_range = db_data.get("moveRange", 1)
+			self.base_attack_range = db_data.get("attackRange", 1)
+			self.card_type_enum = db_data.get("type", GameConstants.CardType.HERO)
+			self.faction_enum = db_data.get("faction", GameConstants.Faction.NEUTRAL)
+			self.atlas_path_info = db_data.get("atlasPath", "")
+			self.atlas_region_info = db_data.get("atlasRegion", [])
+	
+	# 2. OVERRIDE BASE STATS (Permanent Buffs)
+	# If server sends these, it means the base value itself has changed
+	if data.has("base_attack"): self.base_attack = data.base_attack
+	if data.has("base_health"): self.base_health = data.base_health
+	
+	# 3. APPLY CURRENT STATE (Temporary Buffs / Damage)
+	if data.has("current_attack"): self.current_attack = data.current_attack
+	if data.has("current_health"): self.current_health = data.current_health
+	if data.has("current_cost"): self.current_cost = data.current_cost
+	if data.has("can_retaliate"): self.can_retaliate = data.can_retaliate
+	
+	## 4. OVERRIDE VISUALS (If specific atlas data provided)
+	#if data.has("atlasPath"): self.atlas_path_info = data.atlasPath
+	#if data.has("atlasRegion"): self.atlas_region_info = data.atlasRegion
+	
+	# 5. REFRESH VISUALS
+	_update_visuals_from_data()
+
+func _update_visuals_from_data() -> void:
+	var card_image_node = get_node_or_null("CardImage")
+	if is_instance_valid(card_image_node) and atlas_path_info != "" and atlas_region_info.size() == 4:
+		var new_atlas = AtlasTexture.new()
+		var atlas_res = load(atlas_path_info)
+		if atlas_res is AtlasTexture: new_atlas.atlas = atlas_res.atlas
+		elif atlas_res is Texture2D: new_atlas.atlas = atlas_res
+		else: return
+		
+		new_atlas.region = Rect2(atlas_region_info[0],
+								atlas_region_info[1], 
+								atlas_region_info[2], 
+								atlas_region_info[3]
+								)
+		card_image_node.texture = new_atlas
+	
+	var stats_node = get_node_or_null("CardImage/Stats")
+	if is_instance_valid(stats_node):
+		match card_type_enum:
+			GameConstants.CardType.ARTIFACT, GameConstants.CardType.SPELL:
+				stats_node.visible = false
+			GameConstants.CardType.PLOY:
+				stats_node.visible = false
+				# This is only on special cases where Ploys have an HP value tied to them
+				# Hence we need the stats node to be visible particularly the HP
+				if base_health > 0: 
+					stats_node.visible = true
+					var atk_img = stats_node.get_node_or_null("AttackImage")
+					if atk_img: atk_img.visible = false
+				else:
+					stats_node.visible = false
+			_: 
+				# Standard Unit
+				stats_node.visible = true
+				# Ensure Attack is visible if it was hidden by Ploy logic
+				var atk_img = stats_node.get_node_or_null("AttackImage")
+				if atk_img: atk_img.visible = true
+
+	# 3. Text Updates
+	_update_attack_visual()
+	_update_health_visual()
+
+	var ap_cost_node = get_node_or_null("ApCostImage/Cost")
+	if ap_cost_node: ap_cost_node.text = str(base_cost)
+	
+	var type_node = get_node_or_null("TypeImage/Type") 
+	if type_node: type_node.text = str(card_type_enum)
+	
+	_update_health_visual()
+	_update_visual_state()
+
+func _update_health_visual(force_red: bool = false) -> void:
+	var health_label = get_node_or_null("CardImage/Stats/HealthImage/Health")
+	if is_instance_valid(health_label):
+		health_label.text = str(current_health)
+		if current_health < base_health or force_red:
+			health_label.add_theme_color_override("default_color", Color("#f16d87"))
+		else:
+			if health_label.has_theme_color_override("default_color"):
+				health_label.remove_theme_color_override("default_color")
+
+func _update_attack_visual() -> void:
+	var stats_node = get_node_or_null("CardImage/Stats")
+	if not is_instance_valid(stats_node): return
+	
+	var attack_label = stats_node.get_node_or_null("AttackImage/Attack")
+	if is_instance_valid(attack_label):
+		attack_label.text = str(current_attack)
+		
+		if current_attack > base_attack:
+			attack_label.add_theme_color_override("default_color", Color.GREEN)
+		elif current_attack < base_attack:
+			attack_label.add_theme_color_override("default_color", Color.RED)
+		else:
+			if attack_label.has_theme_color_override("default_color"):
+				attack_label.remove_theme_color_override("default_color")
 
 func _update_visual_state() -> void:
-	# This method will be overridden in Card.gd / EnemyCard.gd
-	# to toggle visibility of CardImage vs CardBackImage.
-	# print(name, ": BaseCard updating face down visual state. Is face down: ", is_face_down)
-	pass
+	# Base implementation handles BOARD STATE only
+	if not is_instance_valid(card_is_in_slot): return
+
+	var card_image = get_node_or_null("CardImage")
+	var card_back = get_node_or_null("CardBackImage")
+	var ap_cost = get_node_or_null("ApCostImage")
+	var type_img = get_node_or_null("TypeImage")
+	var highlight = get_node_or_null("Highlight")
+
+	if is_face_down:
+		if card_image: card_image.visible = false
+		if card_back: card_back.visible = true
+		if ap_cost: ap_cost.visible = false
+		if type_img: type_img.visible = false
+		if highlight: highlight.visible = false
+	else:
+		if card_image: card_image.visible = true
+		if card_back: card_back.visible = false
+		# By default on board, we hide AP cost but show Type (per your previous fix)
+		if ap_cost: ap_cost.visible = false 
+		if type_img: type_img.visible = true
+
+func update_health_display(new_hp: int, is_lethal: bool = false):
+	current_health = new_hp
+	_update_health_visual(is_lethal)
 
 func _apply_action_used_visuals() -> void:
 	var card_image = get_node_or_null("CardImage")
@@ -341,6 +506,14 @@ func _apply_action_used_visuals() -> void:
 		if is_instance_valid(card_back): # Should be invisible
 			card_back.self_modulate = Color("656565")
 	pass 
+
+# 4. VISUALS: Placeholder for your particle logic
+func _spawn_damage_particle(amount: int):
+	print("VFX: ", name, " took ", amount, " damage!")
+	# Example:
+	# var floats = floating_text_scene.instantiate()
+	# floats.text = "-" + str(amount)
+	# add_child(floats)
 
 func _reset_action_visuals() -> void:
 	var card_image = get_node_or_null("CardImage")
